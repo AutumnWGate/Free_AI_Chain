@@ -1,47 +1,73 @@
 use crate::network::config::NetworkConfigError;
-use std::fmt;
-
+use libp2p::swarm::DialError;
+use libp2p::multiaddr::Error as MultiaddrError;
+use libp2p::noise::Error as NoiseError;
+use std::convert::Infallible;
+    
 /// 定义整个 faic_core 项目的通用错误类型
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// 网络配置错误
-    NetworkConfig(NetworkConfigError),
-    /// 网络错误 (这里可以添加更多具体的网络错误类型)
+    #[error("Network config error: {0}")]
+    NetworkConfig(#[from] NetworkConfigError),
+    
+    #[error("Network error: {0}")]
     Network(String),
-    /// IO 错误
-    Io(std::io::Error),
-    /// 其他错误
+    
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    
+    #[error("Other error: {0}")]
     Other(String),
+    
+    #[error("Invalid address")]
+    InvalidAddress,
+    
+    #[error("Insufficient balance")]
+    InsufficientBalance,
+    
+    #[error("Invalid signature")]
+    InvalidSignature,
+    
+    #[error("Invalid timestamp")]
+    InvalidTimestamp,
+    
+    #[error("Invalid hash")]
+    InvalidHash,
+    
+    #[error("Invalid nonce")]
+    InvalidNonce,
+    
+    #[error("Invalid amount")]
+    InvalidAmount,
+    
+    #[error("Failed to add transaction to pool")]
+    AddTransactionToPoolFailed,
+    
+    #[error("Failed to get node info")]
+    GetNodeInfoFailed,
+    
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+    
+    #[error("Deserialization error: {0}")]
+    DeserializationError(String),
+    
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+    
+    #[error("Not found")]
+    NotFound,
+    
+    #[error("Invalid Merkle proof")]
+    InvalidMerkleProof,
+    
+    #[error("Merkle tree error")]
+    MerkleTreeError,
 }
 
-// 为 Error 实现 Display trait，用于打印错误信息
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::NetworkConfig(e) => write!(f, "Network config error: {}", e),
-            Error::Network(e) => write!(f, "Network error: {}", e),
-            Error::Io(e) => write!(f, "IO error: {}", e),
-            Error::Other(e) => write!(f, "Other error: {}", e),
-        }
-    }
-}
 
-// 为 Error 实现 Error trait
-impl std::error::Error for Error {}
 
-// 实现从 NetworkConfigError 到 Error 的转换
-impl From<NetworkConfigError> for Error {
-    fn from(err: NetworkConfigError) -> Self {
-        Error::NetworkConfig(err)
-    }
-}
 
-// 实现从 std::io::Error 到 Error 的转换
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Error::Io(err)
-    }
-}
 
 // 可以在这里添加其他错误类型的转换，例如：
 // impl From<WalletError> for Error {
@@ -60,5 +86,37 @@ impl From<std::io::Error> for Error {
 impl From<libp2p::TransportError<std::io::Error>> for Error {
     fn from(err: libp2p::TransportError<std::io::Error>) -> Self {
         Error::Network(err.to_string())
+    }
+}
+
+impl From<DialError> for Error {
+    fn from(error: DialError) -> Self {
+        Error::Network(error.to_string())
+    }
+}
+
+impl From<MultiaddrError> for Error {
+    fn from(error: MultiaddrError) -> Self {
+        Error::Network(error.to_string())
+    }
+}
+
+impl From<libp2p::swarm::ListenError> for Error {
+    fn from(error: libp2p::swarm::ListenError) -> Self {
+        Error::Network(error.to_string())
+    }
+}
+
+impl From<NoiseError> for Error {
+    fn from(error: NoiseError) -> Self {
+        Error::Network(error.to_string())
+    }
+}
+
+// 为 Error 实现 From<Infallible>
+impl From<Infallible> for Error {
+    fn from(_: Infallible) -> Self {
+        // Infallible 永远不会发生，所以这个实现实际上永远不会被调用
+        unreachable!("Infallible error should never occur")
     }
 }

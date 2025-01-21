@@ -1,8 +1,8 @@
-use libp2p::{Multiaddr, PeerId};  //用于P2P网络通信
-use serde::{Deserialize, Serialize};  //用于序列化和反序列化
+use libp2p::{Multiaddr, PeerId}; //用于P2P网络通信
+use serde::{Deserialize, Serialize}; //用于序列化和反序列化
 use std::fs;
-use std::time::Duration;  //用于时间操作
-use toml;  //用于TOML格式解析
+use std::time::Duration; //用于时间操作
+use toml; //用于TOML格式解析
 
 // 自定义序列化和反序列化模块
 pub mod serde_peer_id {
@@ -29,7 +29,7 @@ pub mod serde_peer_id {
 
 mod serde_multiaddr {
     use libp2p::Multiaddr;
-    use serde::{Deserialize, Serializer, Serialize};
+    use serde::{Deserialize, Serialize, Serializer};
 
     // 序列化 Multiaddr 为字符串
     pub fn serialize<S>(multiaddrs: &Vec<Multiaddr>, serializer: S) -> Result<S::Ok, S::Error>
@@ -131,7 +131,6 @@ pub struct NetworkConfig {
     // 心跳间隔时间，使用自定义的序列化和反序列化方法
     #[serde(with = "serde_duration_secs")]
     pub heartbeat_interval: Duration,
-
 }
 
 impl NetworkConfig {
@@ -148,18 +147,16 @@ impl NetworkConfig {
     }
 }
 
-
 // 默认实现 NetworkConfig 的默认值
 impl Default for NetworkConfig {
     fn default() -> Self {
         let config = NetworkConfig {
             local_peer_id: PeerId::random(), // 随机生成 PeerId
             listen_addresses: vec!["/ip4/0.0.0.0/tcp/0".parse().unwrap()], // 监听所有IPv4地址的0号端口
-            bootstrap_nodes: vec![], // 初始为空
-            max_connections: 100, // 最大连接数
-            connection_timeout: Duration::from_secs(10), // 连接超时时间
-            heartbeat_interval: Duration::from_secs(60), // 心跳间隔时间
-
+            bootstrap_nodes: vec![],                                       // 初始为空
+            max_connections: 100,                                          // 最大连接数
+            connection_timeout: Duration::from_secs(10),                   // 连接超时时间
+            heartbeat_interval: Duration::from_secs(60),                   // 心跳间隔时间
         };
         println!("网络配置默认值: {:?}", config);
         config
@@ -169,9 +166,9 @@ impl Default for NetworkConfig {
 // 自定义错误类型
 #[derive(Debug)]
 pub enum NetworkConfigError {
-    IoError(std::io::Error),  // 文件操作错误
-    TomlError(toml::de::Error),  // TOML解析错误
-    TomlSerializeError(toml::ser::Error),  // TOML序列化错误
+    IoError(std::io::Error),              // 文件操作错误
+    TomlError(toml::de::Error),           // TOML解析错误
+    TomlSerializeError(toml::ser::Error), // TOML序列化错误
 }
 
 // 为 NetworkConfigError 实现 Display trait，用于打印错误信息
@@ -180,7 +177,9 @@ impl std::fmt::Display for NetworkConfigError {
         match self {
             NetworkConfigError::IoError(e) => write!(f, "IO error: {}", e),
             NetworkConfigError::TomlError(e) => write!(f, "TOML deserialization error: {}", e),
-            NetworkConfigError::TomlSerializeError(e) => write!(f, "TOML serialization error: {}", e),
+            NetworkConfigError::TomlSerializeError(e) => {
+                write!(f, "TOML serialization error: {}", e)
+            }
         }
     }
 }
@@ -298,13 +297,13 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = NetworkConfig::default();
-    
+
         // 检查 listen_addresses
         assert_eq!(
             config.listen_addresses,
             vec!["/ip4/0.0.0.0/tcp/0".parse().unwrap()]
         );
-    
+
         // 检查其他字段
         assert_eq!(config.bootstrap_nodes, vec![]);
         assert_eq!(config.max_connections, 100);

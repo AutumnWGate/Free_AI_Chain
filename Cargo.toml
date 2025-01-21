@@ -11,9 +11,26 @@ lazy_static = "1.5.0"
 #network_config
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_bytes = "0.11.15"
 tokio = { version = "1", features = ["full"] }
 toml = "0.8.19"
-libp2p = "0.54.1"
+libp2p = { version = "0.55.0", features = ["secp256k1","tls","request-response","tcp", "yamux", "noise", "mdns", "tokio"] }
+
+async-trait = "0.1.85"
+
+secp256k1 = { version = "0.30.0", features = ["rand", "recovery", "global-context"] }
+rand = "0.8.5"  # 用于生成随机数，例如在测试中生成随机地址
+chrono = { version = "0.4.39", features = ["serde"] } # 时间处理
+sha2 = "0.10.8" # SHA256 哈希算法
+hex = { version = "0.4.3", features = ["serde"] } # 十六进制编码/解码
+merkletree = "0.23.0" # Merkle 树
+rusqlite = { version = "0.33.0", features = ["bundled"] } # SQLite 数据库
+thiserror = "2.0.11"
+typenum = "1.17.0"
+log = "0.4.20"
+env_logger = "0.11.6"
+base58 = "0.2.0"
+
 
 #test
 
