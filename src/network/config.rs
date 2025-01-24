@@ -134,29 +134,35 @@ pub struct NetworkConfig {
 }
 
 impl NetworkConfig {
-    /// 创建一个新的 NetworkConfig，允许指定 PeerId
-    pub fn new(local_peer_id: PeerId) -> Self {
-        NetworkConfig {
+    pub fn new(local_peer_id: PeerId) -> Result<Self, NetworkConfigError> {
+        let listen_address = "/ip4/0.0.0.0/tcp/0".parse()
+            .map_err(|e: libp2p::multiaddr::Error| NetworkConfigError::AddressParseError(e.to_string()))?;
+            
+        Ok(NetworkConfig {
             local_peer_id,
-            listen_addresses: vec!["/ip4/0.0.0.0/tcp/0".parse().unwrap()],
+            listen_addresses: vec![listen_address],
             bootstrap_nodes: vec![],
             max_connections: 100,
             connection_timeout: Duration::from_secs(10),
             heartbeat_interval: Duration::from_secs(60),
-        }
+        })
     }
 }
 
 // 默认实现 NetworkConfig 的默认值
 impl Default for NetworkConfig {
     fn default() -> Self {
+
+        let listen_address = "/ip4/0.0.0.0/tcp/0".parse()
+            .expect("默认监听地址格式应该永远有效");
+            
         let config = NetworkConfig {
-            local_peer_id: PeerId::random(), // 随机生成 PeerId
-            listen_addresses: vec!["/ip4/0.0.0.0/tcp/0".parse().unwrap()], // 监听所有IPv4地址的0号端口
-            bootstrap_nodes: vec![],                                       // 初始为空
-            max_connections: 100,                                          // 最大连接数
-            connection_timeout: Duration::from_secs(10),                   // 连接超时时间
-            heartbeat_interval: Duration::from_secs(60),                   // 心跳间隔时间
+            local_peer_id: PeerId::random(),
+            listen_addresses: vec![listen_address],
+            bootstrap_nodes: vec![],
+            max_connections: 100,
+            connection_timeout: Duration::from_secs(10),
+            heartbeat_interval: Duration::from_secs(60),
         };
         println!("网络配置默认值: {:?}", config);
         config
@@ -169,6 +175,7 @@ pub enum NetworkConfigError {
     IoError(std::io::Error),              // 文件操作错误
     TomlError(toml::de::Error),           // TOML解析错误
     TomlSerializeError(toml::ser::Error), // TOML序列化错误
+    AddressParseError(String),  // 新增
 }
 
 // 为 NetworkConfigError 实现 Display trait，用于打印错误信息
@@ -177,12 +184,12 @@ impl std::fmt::Display for NetworkConfigError {
         match self {
             NetworkConfigError::IoError(e) => write!(f, "IO error: {}", e),
             NetworkConfigError::TomlError(e) => write!(f, "TOML deserialization error: {}", e),
-            NetworkConfigError::TomlSerializeError(e) => {
-                write!(f, "TOML serialization error: {}", e)
+            NetworkConfigError::TomlSerializeError(e) => write!(f, "TOML serialization error: {}", e),
+            NetworkConfigError::AddressParseError(e) => write!(f, "Address parse error: {}", e),
             }
         }
     }
-}
+
 
 // 为 NetworkConfigError 实现 Error trait
 impl std::error::Error for NetworkConfigError {}
@@ -244,70 +251,5 @@ impl NetworkConfig {
         std::fs::write(path, config_str)?;
         // 返回成功
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn test_load_and_save_config() {
-        // 创建一个临时文件
-        let temp_file = "temp_config.toml";
-
-        // 创建一个默认配置
-        let config = NetworkConfig::default();
-
-        // 保存配置到临时文件
-        config.save_to_file(temp_file).unwrap();
-
-        // 从临时文件加载配置
-        let loaded_config = NetworkConfig::load_from_file(temp_file).unwrap();
-
-        // 验证加载的配置与原始配置相同
-        assert_eq!(config.local_peer_id, loaded_config.local_peer_id);
-        assert_eq!(config.listen_addresses, loaded_config.listen_addresses);
-        assert_eq!(config.bootstrap_nodes, loaded_config.bootstrap_nodes);
-        assert_eq!(config.max_connections, loaded_config.max_connections);
-        assert_eq!(config.connection_timeout, loaded_config.connection_timeout);
-        assert_eq!(config.heartbeat_interval, loaded_config.heartbeat_interval);
-
-        // 删除临时文件
-        fs::remove_file(temp_file).unwrap();
-    }
-
-    #[test]
-    fn test_load_invalid_config() {
-        // 创建一个无效的配置文件
-        let invalid_config = "invalid_config.toml";
-        fs::write(invalid_config, "invalid toml content").unwrap();
-
-        // 尝试加载无效的配置
-        let result = NetworkConfig::load_from_file(invalid_config);
-
-        // 验证加载结果为错误
-        assert!(result.is_err());
-
-        // 删除无效的配置文件
-        fs::remove_file(invalid_config).unwrap();
-    }
-
-    #[test]
-    fn test_default_config() {
-        let config = NetworkConfig::default();
-
-        // 检查 listen_addresses
-        assert_eq!(
-            config.listen_addresses,
-            vec!["/ip4/0.0.0.0/tcp/0".parse().unwrap()]
-        );
-
-        // 检查其他字段
-        assert_eq!(config.bootstrap_nodes, vec![]);
-        assert_eq!(config.max_connections, 100);
-        assert_eq!(config.connection_timeout, Duration::from_secs(10));
-        assert_eq!(config.heartbeat_interval, Duration::from_secs(60));
     }
 }

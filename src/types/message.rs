@@ -3,6 +3,7 @@ use crate::types::block::Block;
 use crate::types::node::NodeInfo;
 use crate::types::amount::Amount;
 use crate::types::transaction::Transaction;
+use crate::crypto::hash::Hash;
 
 /// 消息类型
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -19,8 +20,8 @@ pub enum Request {
     GetNodeInfo,
     GetBalance { address: String },
     SendTransaction { transaction: Transaction },
-    GetMerkleProof { transaction_hash: Vec<u8>, block_hash: Vec<u8> },
-    GetBlock { block_hash: Vec<u8> },
+    GetMerkleProof { transaction_hash: Hash, block_hash: Hash },
+    GetBlock { block_hash: Hash },
     GetBlockByHeight { height: u64 },
     GetLatestBlock,
 }
@@ -30,8 +31,8 @@ pub enum Request {
 pub enum Response {
     GetNodeInfoResponse(NodeInfo),
     GetBalanceResponse { balance: Amount },
-    SendTransactionResponse {#[serde(with = "serde_bytes")] transaction_hash: Vec<u8> },
-    GetMerkleProofResponse { merkle_proof: Vec<Vec<u8>> },
+    SendTransactionResponse { transaction_hash: Hash },
+    GetMerkleProofResponse { merkle_proof: Vec<Hash> },
     GetBlockResponse { block: Block },
     GetLatestBlockResponse { block: Block },
     GetBlockByHeightResponse { block: Block },

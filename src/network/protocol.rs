@@ -10,7 +10,8 @@ use libp2p::{
 };
 
 use std::{iter, time::Duration};
-use crate::types::{message::Request, message::Response};  
+use crate::types::{message::Request, message::Response};
+use crate::crypto::hash::Hash;
 
 
 #[derive(Debug, Clone)]
@@ -174,19 +175,17 @@ pub async fn handle_request(request: Request) -> Result<Response, Error> {
                 .find(|transaction| transaction.hash == transaction_hash)
                 .ok_or(Error::NotFound)?;
             // 将 Merkle 证明转换为 Vec<Vec<u8>>。
-            let merkle_proof: Vec<Vec<u8>> = block
+            let merkle_proof: Vec<Hash> = block
                 .merkle_proof
                 .iter()
-                .map(|s| s.as_bytes().to_vec())
+                .map(|hash| *hash) 
                 .collect();
             Ok(Response::GetMerkleProofResponse { merkle_proof })
         }
         // 处理 GetBlock 请求。
         Request::GetBlock { block_hash } => {
-            // 将 block_hash 转换为十六进制字符串。
-            let block_hash_str = hex::encode(&block_hash);
-            // 调用 crate::ledger::get_block 获取区块。
-            let block = crate::ledger::get_block(&block_hash_str).await?;
+            // block_hash 现在是 Hash 类型，直接使用
+            let block = crate::ledger::get_block(block_hash).await?;
             // 返回 BlockResponse 响应。
             Ok(Response::GetBlockResponse { block })
         }

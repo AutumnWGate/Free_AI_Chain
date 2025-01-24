@@ -9,7 +9,8 @@ lazy_static! {
     /// 1 FAIC = 10^8
     pub static ref ONE_FAIC: BigUint = BigUint::from(100_000_000u64);
     /// 最大数量: 2^128 - 1
-    pub static ref MAX_AMOUNT: BigUint = BigUint::parse_bytes(b"340282366920938463463374607431768211455", 10).unwrap();
+    pub static ref MAX_AMOUNT: BigUint = BigUint::parse_bytes(b"340282366920938463463374607431768211455", 10)
+        .expect("MAX_AMOUNT 常量初始化失败：无效的数字字符串");
 }
 
 /// Amount 数据类型
@@ -151,5 +152,18 @@ pub enum AmountError {
 impl Default for Amount {
     fn default() -> Self {
         Amount { value: BigUint::from(0u64) }
+    }
+}
+
+
+impl Ord for Amount {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl PartialOrd for Amount {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }

@@ -4,6 +4,8 @@ use crate::types::amount::Amount;
 use crate::types::transaction::TransactionType;
 use crate::types::transaction::Transaction;
 use crate::types::block::Block;
+use crate::crypto::hash::Hash;
+use crate::crypto::signature::SignatureWrapper;
 use hex;
 
 
@@ -39,48 +41,39 @@ pub struct WalletSchema {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionSchema {
-    #[serde(with = "hex")]
-    pub transaction_hash: Vec<u8>,
+    pub transaction_hash: Hash,
     pub transaction_type: TransactionType,
     pub from: String,
     pub to: String,
     pub transfer_amount: Amount,
     pub nonce: u64,
-    #[serde(with = "hex")]
-    pub signature: Vec<u8>,
+    pub signature: SignatureWrapper,
     pub timestamp: DateTime<Utc>,
     pub fee: Amount,
-    #[serde(serialize_with = "serialize_optional_hex", deserialize_with = "deserialize_optional_hex")]
-    pub block_hash: Option<Vec<u8>>,
+    pub block_hash: Option<Hash>,
     pub status: TransactionStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockSchema {
-    #[serde(with = "hex")]
-    pub block_hash: Vec<u8>,
-    #[serde(with = "hex")]
-    pub parent_hash: Vec<u8>,
+    pub block_hash: Hash,
+    pub parent_hash: Hash,
     pub height: u64,
     pub timestamp: DateTime<Utc>,
-    #[serde(with = "hex")]
-    pub merkle_root: Vec<u8>,
+    pub merkle_root: Hash,
     pub validator: String,
-    #[serde(with = "hex")]
-    pub signature: Vec<u8>,
+    pub signature: SignatureWrapper,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionPoolSchema {
-    #[serde(with = "hex")]
-    pub hash: Vec<u8>,
+    pub hash: Hash,
     pub transaction_type: TransactionType,
     pub from_address: String,
     pub to_address: String,
     pub transfer_amount: Amount,
     pub nonce: u64,
-    #[serde(with = "hex")]
-    pub signature: Vec<u8>,
+    pub signature: SignatureWrapper,
     pub timestamp: DateTime<Utc>,
     pub fee: Amount,
 }

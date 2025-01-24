@@ -38,9 +38,9 @@ pub struct LedgerState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WalletAction {
     CreateWallet,
-    DeleteWallet,
-    GetBalance,
-    GetTransactionHistory,
+    DeleteWallet { address: String },
+    GetBalance { address: String },
+    GetTransactionHistory { address: String },
 }
 
 /// 交易验证结果

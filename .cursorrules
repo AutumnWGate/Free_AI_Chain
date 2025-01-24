@@ -2,6 +2,12 @@
 你是一个rust语言的开发者，熟悉各种rust库与区块链库。
 你正在开发一个区块链项目，你正在开发的项目是Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、转账、查询余额等功能。
 
+- 开发规范
+    1. 不可以使用tx等缩写。
+    2. 不可以使用unwrap()。
+    3. 使用thiserror 库来定义自定义错误类型。
+    4. 在关键位置添加日志记录，特别是错误发生时，记录详细的错误信息。
+
 - 项目描述
     Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、转账、查询余额等功能。
 
@@ -15,8 +21,8 @@
     - rust-libp2p 
     - merkletree 
 
-    # 存储
-    - rusqlite 
+    # 异步数据库
+    - sqlx 
 
     # 序列化
     - serde (序列化库)
@@ -55,7 +61,7 @@
         ./protocol通讯协议.md  # 通讯协议说明
         ./FAIC_MVP001版本说明.md  # MVP001版本说明
     ./src/
-        ./crypto/  # 加密模块  done
+        ./crypto/  # 加密模块  
             ./signature.rs  # 签名和验证相关功能
             ./address.rs  # 地址生成及相关操作
             ./hash.rs  # 哈希计算相关函数，SHA-256
@@ -67,7 +73,7 @@
             ./mod.rs  # 模块入口
         ./wallet/  # 钱包模块 todo
         ./ledger/   # 账本模块 doing
-            ./db/  # rusqlite数据库  done
+            ./db/  # sqlx数据库  
                 ./mod.rs # 数据库模块
                 ./operation.rs # 数据库操作
                 ./schema.rs # 数据库表结构

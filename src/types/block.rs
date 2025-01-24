@@ -1,22 +1,28 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use crate::crypto::hash::{Hash, sha256_concat};
 use crate::types::transaction::Transaction;
+use crate::crypto::signature::SignatureWrapper;
+use std::cell::RefCell;
+
+#[derive(Debug, thiserror::Error)]
+pub enum BlockError {
+    #[error("哈希错误: {0}")]
+    HashError(#[from] crate::crypto::hash::HashError),
+}
 
 // 区块头
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockHeader {
-    pub parent_hash: Vec<u8>,
+    pub parent_hash: Hash,
     pub height: u64,
     pub timestamp: DateTime<Utc>,
-    #[serde(with = "hex")]
-    pub merkle_root: Vec<u8>,
+    pub merkle_root: Hash,
     pub validator: String,
-    pub signature: Vec<u8>,
-    #[serde(with = "hex")]
-    pub block_hash: Vec<u8>,
+    pub signature: SignatureWrapper,
+    pub block_hash: Hash,
     pub block_number: u64,
-    pub previous_block_hash: Vec<u8>,
+    pub previous_block_hash: Hash,
 }
 
 // 区块
@@ -29,15 +35,16 @@ pub struct Block {
 impl Default for BlockHeader {
     fn default() -> Self {
         BlockHeader {
-            parent_hash: Vec::new(),
+            parent_hash: Hash::new(),
             height: 0,
             timestamp: Utc::now(),
-            merkle_root: Vec::new(),
+            merkle_root: Hash::new(),
             validator: String::new(),
-            signature: Vec::new(),
-            block_hash: Vec::new(),
+            signature: SignatureWrapper::from_bytes(&[0u8; 65])
+                .expect("默认签名应该总是有效的"), // 这里使用 expect 更合适，因为这是默认值
+            block_hash: Hash::new(),
             block_number: 0,
-            previous_block_hash: Vec::new(),
+            previous_block_hash: Hash::new(),
         }
     }
 }
@@ -51,11 +58,19 @@ impl Default for Block {
     }
 }
 
+// 使用线程局部存储来处理 AsRef<[u8]> 实现
+thread_local! {
+    static BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+}
+
 impl AsRef<[u8]> for Block {
     fn as_ref(&self) -> &[u8] {
-        let serialized = serde_json::to_vec(self).unwrap();
-        let boxed_slice = serialized.into_boxed_slice();
-        Box::leak(boxed_slice)
+        BUFFER.with(|buffer| {
+            let mut buf = buffer.borrow_mut();
+            *buf = serde_json::to_vec(self).unwrap_or_default();
+            // 安全：buf 的生命周期与 BUFFER 绑定
+            unsafe { std::mem::transmute(buf.as_slice()) }
+        })
     }
 }
 
@@ -72,13 +87,13 @@ impl Ord for Block {
 }
 
 // 计算区块哈希的函数
-pub fn calculate_block_hash(header: &BlockHeader) -> Vec<u8> {
-    let mut hasher = Sha256::new();
-    hasher.update(&header.parent_hash);
-    hasher.update(header.height.to_be_bytes());
-    hasher.update(header.timestamp.to_rfc3339().as_bytes());
-    hasher.update(&header.merkle_root);
-    hasher.update(&header.validator);
-    hasher.update(&header.signature);
-    hasher.finalize().to_vec()
+pub fn calculate_block_hash(header: &BlockHeader) -> Result<Hash, BlockError> {
+    sha256_concat(&[
+        header.parent_hash.as_ref(),
+        &header.height.to_be_bytes(),
+        header.timestamp.to_rfc3339().as_bytes(),
+        header.merkle_root.as_ref(),
+        header.validator.as_bytes(),
+        &header.signature.to_bytes().as_ref(),
+    ]).map_err(BlockError::HashError)
 }

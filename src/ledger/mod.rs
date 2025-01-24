@@ -43,7 +43,7 @@ pub struct LedgerManager {
 
 impl LedgerManager {
     /// 创建新的账本管理器实例
-    pub fn new(db_path: &str) -> Result<Self, LedgerError> {
+    pub async fn new(db_path: &str) -> Result<Self, LedgerError> {
         info!("正在初始化账本管理器...");
         
         // 初始化数据库连接
@@ -68,9 +68,9 @@ impl LedgerManager {
         
         // 初始化账本状态
         let state = Arc::new(Mutex::new(LedgerState {
-            wallet_management: wallet_manager.get_wallet_management()?,
-            block_management: block_manager.get_block_management()?,
-            transaction_management: transaction_manager.get_transaction_management()?,
+            wallet_management: wallet_manager.get_wallet_management().await?,
+            block_management: block_manager.get_block_management().await?,
+            transaction_management: transaction_manager.get_transaction_management().await?,
         }));
         
         info!("账本管理器初始化完成");
@@ -82,7 +82,7 @@ impl LedgerManager {
             transaction_manager,
             block_manager,
             db_manager,
-            event_sender,
+            event_sender: sender,  // 修正：使用 sender 而不是 event_sender
             event_receiver,
         })
     }
@@ -103,31 +103,30 @@ impl LedgerManager {
     }
 
     /// 同步账本状态到数据库
-    pub fn sync_to_db(&self) -> Result<(), LedgerError> {
+    pub async fn sync_to_db(&self) -> Result<(), LedgerError> {
         debug!("正在同步账本状态到数据库...");
         let state = self.state.lock().map_err(|_| {
             error!("获取状态锁失败");
             LedgerError::Unknown("获取状态锁失败".to_string())
         })?;
         
-        self.wallet_manager.sync_to_db(&state.wallet_management)?;
-        self.transaction_manager.sync_to_db(&state.transaction_management)?;
-        self.block_manager.sync_to_db(&state.block_management)?;
+        self.wallet_manager.sync_to_db(&state.wallet_management).await?;
+        self.transaction_manager.sync_to_db(&state.transaction_management).await?;
+        self.block_manager.sync_to_db(&state.block_management).await?;
         
         debug!("账本状态同步完成");
         Ok(())
     }
 
     /// 从数据库加载账本状态
-    pub fn load_from_db(&self) -> Result<(), LedgerError> {
+    pub async fn load_from_db(&self) -> Result<(), LedgerError> {
         debug!("正在从数据库加载账本状态...");
-        self.update_state()?;
+        self.update_state().await?;
         debug!("账本状态加载完成");
         Ok(())
     }
     
-    /// 更新账本状态
-    pub fn update_state(&self) -> Result<(), LedgerError> {
+    pub async fn update_state(&self) -> Result<(), LedgerError> {
         debug!("正在更新账本状态...");
         let mut state = self.state.lock().map_err(|_| {
             error!("获取状态锁失败");
@@ -135,9 +134,9 @@ impl LedgerManager {
         })?;
         
         *state = LedgerState {
-            wallet_management: self.wallet_manager.get_wallet_management()?,
-            block_management: self.block_manager.get_block_management()?,
-            transaction_management: self.transaction_manager.get_transaction_management()?,
+            wallet_management: self.wallet_manager.get_wallet_management().await?,
+            block_management: self.block_manager.get_block_management().await?,
+            transaction_management: self.transaction_manager.get_transaction_management().await?,
         };
         
         debug!("账本状态更新完成");
@@ -145,13 +144,13 @@ impl LedgerManager {
     }
 
     /// 获取交易池中的交易
-    pub fn get_pending_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
-        self.transaction_manager.get_pending_transactions()
+    pub async fn get_pending_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
+        self.transaction_manager.get_pending_transactions().await
     }
 
     /// 清理已确认的交易
-    pub fn clean_confirmed_transactions(&self) -> Result<(), LedgerError> {
-        self.transaction_manager.clean_confirmed_transactions()
+    pub async fn clean_confirmed_transactions(&self) -> Result<(), LedgerError> {
+        self.transaction_manager.clean_confirmed_transactions().await
     }
 
     /// 获取事件接收器
@@ -167,16 +166,16 @@ impl LedgerManager {
     }
     
     /// 关闭账本管理器
-    pub fn shutdown(&self) -> Result<(), LedgerError> {
+    pub async fn shutdown(&self) -> Result<(), LedgerError> {
         info!("正在关闭账本管理器...");
         
         // 同步最终状态到数据库
-        if let Err(e) = self.sync_to_db() {
+        if let Err(e) = self.sync_to_db().await {  // 添加 .await
             error!("同步状态到数据库失败: {:?}", e);
         }
         
         // 清理交易池
-        if let Err(e) = self.clean_confirmed_transactions() {
+        if let Err(e) = self.clean_confirmed_transactions().await {
             error!("清理已确认交易失败: {:?}", e);
         }
         
@@ -188,8 +187,7 @@ impl LedgerManager {
 // 为 LedgerManager 实现 Drop trait
 impl Drop for LedgerManager {
     fn drop(&mut self) {
-        if let Err(e) = self.shutdown() {
-            error!("关闭账本管理器时发生错误: {:?}", e);
-        }
+        // 由于 Drop 不能是异步的，我们只能在这里记录错误
+        error!("警告：账本管理器被销毁时无法执行异步清理操作");
     }
 }
