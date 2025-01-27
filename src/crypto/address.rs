@@ -175,3 +175,9 @@ impl Address {
         Ok(Address(decoded))
     }
 }
+
+impl AsRef<[u8]> for Address {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}

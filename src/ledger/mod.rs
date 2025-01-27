@@ -10,7 +10,7 @@ use crate::types::ledger::LedgerState;
 use crate::types::wallet::Wallet;
 use crate::types::block::Block;
 use crate::types::transaction::Transaction;
-use rusqlite::Connection;
+use sqlx::SqlitePool;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use self::error::LedgerError;
@@ -18,6 +18,7 @@ use self::wallet::WalletManager;
 use self::transaction::TransactionManager;
 use self::block::BlockManager;
 use self::db::operation::DatabaseManager;
+use self::merkletree::MerkleTreeManager;
 
 /// 账本事件类型
 #[derive(Debug)]
@@ -32,13 +33,14 @@ pub enum LedgerEvent {
 /// 账本管理器结构体
 pub struct LedgerManager {
     pub state: Arc<Mutex<LedgerState>>,
-    pub db_conn: Arc<Mutex<Connection>>,
+    pub pool: Arc<SqlitePool>,  // 修改为 SqlitePool
     wallet_manager: WalletManager,
     transaction_manager: TransactionManager,
     block_manager: BlockManager,
     db_manager: DatabaseManager,
     event_sender: Sender<LedgerEvent>,
     event_receiver: Arc<Mutex<Receiver<LedgerEvent>>>,
+    merkle_manager: MerkleTreeManager,
 }
 
 impl LedgerManager {
@@ -46,29 +48,43 @@ impl LedgerManager {
     pub async fn new(db_path: &str) -> Result<Self, LedgerError> {
         info!("正在初始化账本管理器...");
         
-        // 初始化数据库连接
-        let conn = Connection::open(db_path)
+        // 初始化数据库连接池
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(5)
+            .min_connections(1)
+            .acquire_timeout(std::time::Duration::from_secs(30))
+            .idle_timeout(std::time::Duration::from_secs(300))
+            .after_connect(|conn, _meta| Box::pin(async move {
+                // 设置外键约束
+                sqlx::query("PRAGMA foreign_keys = ON").execute(&mut *conn).await?;
+                // 设置WAL模式
+                sqlx::query("PRAGMA journal_mode = WAL").execute(&mut *conn).await?;
+                Ok(())
+            }))
+            .connect(db_path)
+            .await
             .map_err(|e| {
                 error!("数据库连接失败: {}", e);
                 LedgerError::DatabaseError(e)
             })?;
         
-        let db_conn = Arc::new(Mutex::new(conn));
-        
-        // 初始化数据库管理器
-        let db_manager = DatabaseManager::new(Arc::clone(&db_conn));
-        db_manager.initialize_tables()?;
+        let pool = Arc::new(pool);
         
         // 初始化各个管理器
-        let wallet_manager = WalletManager::new(Arc::clone(&db_conn))?;
-        let transaction_manager = TransactionManager::new(Arc::clone(&db_conn))?;
-        let block_manager = BlockManager::new(Arc::clone(&db_conn))?;
+        let db_manager = DatabaseManager::new(pool.clone());
+        let wallet_manager = WalletManager::new(pool.clone())?;
+        let transaction_manager = TransactionManager::new(pool.clone())?;
+        let block_manager = BlockManager::new(pool.clone())?;
+        let merkle_manager = MerkleTreeManager::new(pool.clone());
+        // 初始化数据库表
+        db_manager.initialize_tables().await?;
+
         let (sender, receiver) = channel();
-        let event_receiver = Arc::new(Mutex::new(receiver));
+        let event_receiver = Arc::new(Mutex::new(receiver));    
         
         // 初始化账本状态
         let state = Arc::new(Mutex::new(LedgerState {
-            wallet_management: wallet_manager.get_wallet_management().await?,
+            wallet_management: wallet_manager.get_wallet_management(None).await?,
             block_management: block_manager.get_block_management().await?,
             transaction_management: transaction_manager.get_transaction_management().await?,
         }));
@@ -77,14 +93,27 @@ impl LedgerManager {
         
         Ok(Self {
             state,
-            db_conn,
+            pool,  // 使用 pool 替代 db_conn
             wallet_manager,
             transaction_manager,
             block_manager,
             db_manager,
-            event_sender: sender,  // 修正：使用 sender 而不是 event_sender
+            event_sender: sender,
             event_receiver,
+            merkle_manager,
         })
+    }
+
+    /// 检查数据库连接健康状态
+    pub async fn check_database_health(&self) -> Result<(), LedgerError> {
+        debug!("正在检查数据库连接健康状态...");
+        sqlx::query("SELECT 1").execute(&*self.pool).await
+            .map_err(|e| {
+                error!("数据库健康检查失败: {}", e);
+                LedgerError::DatabaseError(e)
+            })?;
+        debug!("数据库连接正常");
+        Ok(())
     }
     
     /// 获取钱包管理器
@@ -102,20 +131,49 @@ impl LedgerManager {
         &self.block_manager
     }
 
+    /// 数据库迁移支持
+    pub async fn run_migrations(&self) -> Result<(), LedgerError> {
+        debug!("正在运行数据库迁移...");
+        // 数据库迁移支持TODO
+        // sqlx::migrate!("./migrations")
+        //     .run(&*self.pool)
+        //     .await
+        //     .map_err(|e| {
+        //         error!("数据库迁移失败: {}", e);
+        //         LedgerError::DatabaseError(e)
+        //     })?;
+        debug!("数据库迁移完成");
+        Ok(())
+    }
+
     /// 同步账本状态到数据库
     pub async fn sync_to_db(&self) -> Result<(), LedgerError> {
         debug!("正在同步账本状态到数据库...");
-        let state = self.state.lock().map_err(|_| {
-            error!("获取状态锁失败");
-            LedgerError::Unknown("获取状态锁失败".to_string())
-        })?;
         
-        self.wallet_manager.sync_to_db(&state.wallet_management).await?;
-        self.transaction_manager.sync_to_db(&state.transaction_management).await?;
-        self.block_manager.sync_to_db(&state.block_management).await?;
+        let transaction = self.pool.begin().await?;
         
-        debug!("账本状态同步完成");
-        Ok(())
+        let result = async {
+            let state = self.state.lock()?;
+            
+            self.wallet_manager.sync_to_db(&state.wallet_management).await?;
+            self.transaction_manager.sync_to_db(&state.transaction_management).await?;
+            self.block_manager.sync_to_db(&state.block_management).await?;
+            
+            Ok::<(), LedgerError>(())
+        }.await;
+    
+        match result {
+            Ok(_) => {
+                transaction.commit().await?;
+                debug!("账本状态同步完成");
+                Ok(())
+            }
+            Err(e) => {
+                error!("同步失败，正在回滚事务: {}", e);
+                transaction.rollback().await?;
+                Err(e)
+            }
+        }
     }
 
     /// 从数据库加载账本状态
@@ -134,7 +192,7 @@ impl LedgerManager {
         })?;
         
         *state = LedgerState {
-            wallet_management: self.wallet_manager.get_wallet_management().await?,
+            wallet_management: self.wallet_manager.get_wallet_management(None).await?,
             block_management: self.block_manager.get_block_management().await?,
             transaction_management: self.transaction_manager.get_transaction_management().await?,
         };
@@ -167,19 +225,15 @@ impl LedgerManager {
     
     /// 关闭账本管理器
     pub async fn shutdown(&self) -> Result<(), LedgerError> {
-        info!("正在关闭账本管理器...");
+        debug!("正在关闭账本管理器...");
+    
+        // 同步最终状态
+        self.sync_to_db().await?;
         
-        // 同步最终状态到数据库
-        if let Err(e) = self.sync_to_db().await {  // 添加 .await
-            error!("同步状态到数据库失败: {:?}", e);
-        }
+        // 等待所有连接释放
+        self.pool.close().await;
         
-        // 清理交易池
-        if let Err(e) = self.clean_confirmed_transactions().await {
-            error!("清理已确认交易失败: {:?}", e);
-        }
-        
-        info!("账本管理器关闭完成");
+        debug!("账本管理器已关闭");
         Ok(())
     }
 }

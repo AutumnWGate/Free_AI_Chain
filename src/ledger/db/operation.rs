@@ -1,7 +1,6 @@
-use sqlx::{Connection, Pool};
-use sqlx::sqlite::{SqlitePool, Sqlite};
-use sqlx::Type;
-use std::sync::{Arc, Mutex};
+
+use sqlx::sqlite::SqlitePool;
+use std::sync::Arc;
 use log::{debug, info, error};
 use super::super::error::LedgerError;
 use crate::types::wallet::Wallet;
@@ -41,7 +40,7 @@ impl DatabaseManager {
             Ok(_) => debug!("钱包表创建成功"),
             Err(e) => {
                 error!("创建钱包表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e.to_string()));
+                return Err(LedgerError::DatabaseError(e));
             }
         };
 
@@ -67,7 +66,7 @@ impl DatabaseManager {
             Ok(_) => debug!("交易表创建成功"),
             Err(e) => {
                 error!("创建交易表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e.to_string()));
+                return Err(LedgerError::DatabaseError(e));
             }
         };
 
@@ -89,7 +88,7 @@ impl DatabaseManager {
             Ok(_) => debug!("区块表创建成功"),
             Err(e) => {
                 error!("创建区块表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e.to_string()));
+                return Err(LedgerError::DatabaseError(e));
             }
         };
 
@@ -111,9 +110,35 @@ impl DatabaseManager {
             Ok(_) => debug!("钱包交易历史表创建成功"),
             Err(e) => {
                 error!("创建钱包交易历史表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e.to_string()));
+                return Err(LedgerError::DatabaseError(e));
             }
-        };   
+        };
+        
+        // 创建默克尔树表
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS merkle_roots (
+                root_hash TEXT PRIMARY KEY,
+                block_hash TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (block_hash) REFERENCES blocks(block_hash)
+            )"
+        )
+        .execute(pool)
+        .await?;
+        
+        // 创建默克尔证明表
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS merkle_proofs (
+                transaction_hash TEXT PRIMARY KEY,
+                root_hash TEXT NOT NULL,
+                proof_data TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                FOREIGN KEY (transaction_hash) REFERENCES transactions(hash),
+                FOREIGN KEY (root_hash) REFERENCES merkle_roots(root_hash)
+            )"
+        )
+        .execute(pool)
+        .await?;
 
         // 创建索引
         debug!("正在创建索引...");
@@ -123,7 +148,11 @@ impl DatabaseManager {
             ("交易区块索引", "CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_hash)"),
             ("区块高度索引", "CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height)"),
             ("区块父哈希索引", "CREATE INDEX IF NOT EXISTS idx_blocks_parent ON blocks(parent_hash)"),
-            ("钱包历史索引", "CREATE INDEX IF NOT EXISTS idx_wallet_history_address ON wallet_transaction_history(wallet_address)")
+            ("钱包历史索引", "CREATE INDEX IF NOT EXISTS idx_wallet_history_address ON wallet_transaction_history(wallet_address)"),
+            ("默克尔树根哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_roots_root_hash ON merkle_roots(root_hash)"),
+            ("默克尔树区块哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_roots_block_hash ON merkle_roots(block_hash)"),
+            ("默克尔证明交易哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_proofs_transaction_hash ON merkle_proofs(transaction_hash)"),
+            ("默克尔证明根哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_proofs_root_hash ON merkle_proofs(root_hash)")
         ] {
             debug!("正在创建{}...", index_name);
             match sqlx::query(query)
@@ -132,7 +161,7 @@ impl DatabaseManager {
                     Ok(_) => debug!("{}创建成功", index_name),
                     Err(e) => {
                         error!("创建{}失败: {}", index_name, e);
-                        return Err(LedgerError::DatabaseError(e.to_string()));
+                        return Err(LedgerError::DatabaseError(e));
                     }
                 };
         }
@@ -142,17 +171,14 @@ impl DatabaseManager {
     }
 }
 
+
+
+
+
 /// 钱包数据库操作
 pub struct WalletOperations {
     pool: Arc<SqlitePool>,
 }
-
-/// 交易数据库操作
-pub struct TransactionOperations {
-    pool: Arc<SqlitePool>,
-}
-
-
 
 impl WalletOperations {
     pub fn new(pool: Arc<SqlitePool>) -> Self {
@@ -177,7 +203,7 @@ impl WalletOperations {
             },
             Err(e) => {
                 error!("插入钱包记录失败: {}", e);
-                Err(LedgerError::DatabaseError(e.to_string()))
+                Err(LedgerError::DatabaseError(e))
             }
         }
     }
@@ -204,7 +230,7 @@ impl WalletOperations {
                 Ok(Some(Wallet {
                     address: row.address,
                     balance: Amount::from_str(&row.balance)
-                        .map_err(|e| LedgerError::DatabaseError(e.to_string()))?,
+                        .map_err(|e| LedgerError::AmountError(e.to_string()))?,
                     nonce: row.nonce as u64,
                 }))
             },
@@ -214,7 +240,7 @@ impl WalletOperations {
             },
             Err(e) => {
                 error!("查询钱包失败: {}", e);
-                Err(LedgerError::DatabaseError(e.to_string()))
+                Err(LedgerError::DatabaseError(e))
             }
         }
     }
@@ -237,7 +263,7 @@ impl WalletOperations {
             },
             Err(e) => {
                 error!("更新钱包余额失败: {}", e);
-                Err(LedgerError::DatabaseError(e.to_string()))
+                Err(LedgerError::DatabaseError(e))
             }
         }
     }
@@ -258,367 +284,224 @@ impl WalletOperations {
             },
             Err(e) => {
                 error!("删除钱包失败: {}", e);
-                Err(LedgerError::DatabaseError(e.to_string()))
+                Err(LedgerError::DatabaseError(e))
             }
         }
     }
 
-    pub fn update_transaction_history(&self, address: &str, transactions: &[Transaction]) -> Result<(), LedgerError> {
+    pub async fn update_transaction_history(&self, address: &str, transactions: &[Transaction]) -> Result<(), LedgerError> {
         debug!("正在更新钱包交易历史: {}", address);
-        let mut conn = self.conn.lock()?;
+        let pool = &*self.pool;
         
-        // 开始事务，使用更具描述性的变量名
-        let db_transaction = conn.transaction().map_err(LedgerError::DatabaseError)?;
+        // 开始事务
+        let mut transaction = pool.begin().await?;
         
         for transaction_record in transactions {
             let hash = hex::encode(&transaction_record.transaction_hash);
             // 插入或忽略重复记录
-            db_transaction.execute(
+            sqlx::query(
                 "INSERT OR IGNORE INTO wallet_transaction_history 
                 (wallet_address, transaction_hash, timestamp) 
-                VALUES (?1, ?2, ?3)",
-                params![
-                    address,
-                    hash,
-                    transaction_record.timestamp.timestamp()
-                ],
-            ).map_err(LedgerError::DatabaseError)?;
+                VALUES ($1, $2, $3)"
+            )
+            .bind(address)
+            .bind(&hash)
+            .bind(transaction_record.timestamp.timestamp())
+            .execute(&mut *transaction)
+            .await?;
         }
         
         // 提交事务
-        db_transaction.commit().map_err(LedgerError::DatabaseError)?;
+        transaction.commit().await?;
         
         debug!("交易历史更新成功");
         Ok(())
     }
 
-    pub fn get_transaction_history(&self, address: &str) -> Result<Vec<Transaction>, LedgerError> {
+    pub async fn get_transaction_history(&self, address: &str) -> Result<Vec<Transaction>, LedgerError> {
         debug!("正在获取钱包交易历史: {}", address);
-        let conn = self.conn.lock()?;
-        
-        let mut stmt = conn.prepare(
+        let pool = &*self.pool;
+    
+        // 定义数据库行结构
+        #[derive(sqlx::FromRow)]
+        struct TransactionRow {
+            hash: String,
+            transaction_type: String,
+            from_address: String,
+            to_address: String,
+            transfer_amount: String,
+            nonce: i64,
+            signature: String,
+            timestamp: i64,
+            fee: String,
+            block_hash: Option<String>,
+            status: String,
+        }
+    
+        // 执行查询
+        let rows = sqlx::query_as::<_, TransactionRow>(
             "SELECT t.* FROM transactions t
             INNER JOIN wallet_transaction_history wth ON t.hash = wth.transaction_hash
-            WHERE wth.wallet_address = ?1
+            WHERE wth.wallet_address = $1
             ORDER BY wth.timestamp DESC"
-        ).map_err(LedgerError::DatabaseError)?;
-        
-        let transactions = stmt.query_map([address], |row| {
-            Ok(Transaction {
-                transaction_type: serde_json::from_str(&row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                from: row.get(2)?,
-                to: row.get(3)?,
-                transfer_amount: Amount::from_str(&row.get::<_, String>(4)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                nonce: row.get::<_, String>(5)?
-                    .parse::<u64>()  // 或其他适当的数字类型
-                    .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                        5,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                timestamp: chrono::DateTime::from_timestamp(
-                    row.get::<_, String>(7)?
-                        .parse::<i64>()
-                        .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                            7,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    0
-                ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                    7,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp"))
-                ))?,
-                fee: Amount::from_str(&row.get::<_, String>(8)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        8,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                transaction_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-            })
-        }).map_err(LedgerError::DatabaseError)?;
+        )
+        .bind(address)
+        .fetch_all(pool)
+        .await?;
     
-        let result = transactions.collect::<Result<Vec<_>, _>>()
-            .map_err(LedgerError::DatabaseError)?;
-        
-        debug!("获取到 {} 笔交易历史", result.len());
-        Ok(result)
+        // 转换查询结果
+        let transactions = rows.into_iter()
+        .map(|row| {
+            Ok(Transaction {
+                transaction_type: serde_json::from_str(&row.transaction_type)?,
+                from: row.from_address,
+                to: row.to_address,
+                transfer_amount: Amount::from_str(&row.transfer_amount)
+                    .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                nonce: row.nonce as u64,
+                signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                    .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                    .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                fee: Amount::from_str(&row.fee)
+                    .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                transaction_hash: to_hash(hex::decode(row.hash)?)
+                    .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+            })
+        })
+        .collect::<Result<Vec<_>, LedgerError>>()?;
+    
+        debug!("获取到 {} 笔交易历史", transactions.len());
+        Ok(transactions)
     }
 
 }
 
+/// 交易数据库操作
+pub struct TransactionOperations {
+    pool: Arc<SqlitePool>,
+}
+
 impl TransactionOperations {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(pool: Arc<SqlitePool>) -> Self {
+        Self { pool }
     }
 
-    pub fn insert_transaction(&self, transaction: Transaction) -> Result<(), LedgerError> {
+    /// 插入新的交易记录
+    pub async fn insert_transaction(&self, transaction: Transaction) -> Result<(), LedgerError> {
         debug!("正在插入交易记录: {:?}", transaction.transaction_hash);
-        let conn = self.conn.lock()?;
+        let pool = &*self.pool;
         
-        conn.execute(
+        sqlx::query(
             "INSERT INTO transactions (
                 hash, transaction_type, from_address, to_address, transfer_amount, 
                 nonce, signature, timestamp, fee, block_hash, status
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                &hex::encode(&transaction.transaction_hash),
-                &format!("{:?}", transaction.transaction_type),
-                &transaction.from,
-                &transaction.to,
-                &transaction.transfer_amount.to_string(),
-                &transaction.nonce,
-                &hex::encode(&transaction.signature),
-                &transaction.timestamp.timestamp(),
-                &transaction.fee,
-                "",  // 初始区块哈希为空
-                "pending"         // 初始状态为待处理
-            ],
-        ).map_err(LedgerError::DatabaseError)?;
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+        )
+        .bind(&hex::encode(&transaction.transaction_hash))
+        .bind(&format!("{:?}", transaction.transaction_type))
+        .bind(&transaction.from)
+        .bind(&transaction.to)
+        .bind(&transaction.transfer_amount.to_string())
+        .bind(transaction.nonce as i64)
+        .bind(&hex::encode(&transaction.signature))
+        .bind(transaction.timestamp.timestamp())
+        .bind(&transaction.fee.to_string())
+        .bind("")  // 初始区块哈希为空
+        .bind("pending")  // 初始状态为待处理
+        .execute(pool)
+        .await?;
         
         debug!("交易记录插入成功");
         Ok(())
     }
 
-    pub fn get_pending_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
+    /// 获取待处理的交易列表
+    pub async fn get_pending_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
         debug!("正在获取待处理交易");
-        let conn = self.conn.lock()?;
-        
-        let mut stmt = conn.prepare(
-            "SELECT * FROM transactions WHERE status = 'pending' ORDER BY fee DESC"
-        ).map_err(LedgerError::DatabaseError)?;
-        
-        let transactions = stmt.query_map([], |row| {
-            Ok(Transaction {
-                transaction_type: serde_json::from_str(&row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(e)
-                    ))?,
-                from: row.get(2)?,
-                to: row.get(3)?,
-                transfer_amount: Amount::from_str(&row.get::<_, String>(4)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                nonce: row.get::<_, String>(5)?
-                    .parse()
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        5,
-                        rusqlite::types::Type::Text,
-                        Box::new(e)
-                    ))?,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(e)
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                timestamp: chrono::DateTime::from_timestamp(
-                    row.get::<_, String>(7)?
-                        .parse()
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            7,
-                            rusqlite::types::Type::Text,
-                            Box::new(e)
-                        ))?,
-                    0
-                ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                    7,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "Invalid timestamp"
-                    ))
-                ))?,
-                fee: Amount::from_str(&row.get::<_, String>(8)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        8,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                transaction_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(e)
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-            })
-        }).map_err(LedgerError::DatabaseError)?;
+        let pool = &*self.pool;
 
-        let result = transactions.collect::<Result<Vec<_>, _>>()
-            .map_err(LedgerError::DatabaseError)?;
+        #[derive(sqlx::FromRow)]
+        struct TransactionRow {
+            hash: String,
+            transaction_type: String,
+            from_address: String,
+            to_address: String,
+            transfer_amount: String,
+            nonce: i64,
+            signature: String,
+            timestamp: i64,
+            fee: String,
+            block_hash: Option<String>,
+            status: String,
+        }
         
-        debug!("获取到 {} 笔待处理交易", result.len());
-        Ok(result)
+        let rows = sqlx::query_as::<_, TransactionRow>(
+            "SELECT * FROM transactions WHERE status = 'pending' ORDER BY fee DESC"
+        )
+        .fetch_all(pool)
+        .await?;
+
+        let transactions = rows.into_iter()
+            .map(|row| {
+                Ok(Transaction {
+                    transaction_type: serde_json::from_str(&row.transaction_type)?,
+                    from: row.from_address,
+                    to: row.to_address,
+                    transfer_amount: Amount::from_str(&row.transfer_amount)
+                        .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                    nonce: row.nonce as u64,
+                    signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    fee: Amount::from_str(&row.fee)
+                        .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                    transaction_hash: to_hash(hex::decode(row.hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                })
+            })
+            .collect::<Result<Vec<_>, LedgerError>>()?;
+        
+        debug!("获取到 {} 笔待处理交易", transactions.len());
+        Ok(transactions)
     }
 
-    pub fn update_transaction_status(&self, hash: &str, status: &str) -> Result<(), LedgerError> {
+    /// 更新交易状态
+    pub async fn update_transaction_status(&self, hash: &str, status: &str) -> Result<(), LedgerError> {
         debug!("正在更新交易状态: {} -> {}", hash, status);
-        let conn = self.conn.lock()?;
+        let pool = &*self.pool;
         
-        conn.execute(
-            "UPDATE transactions SET status = ?1 WHERE hash = ?2",
-            [status, hash],
-        ).map_err(LedgerError::DatabaseError)?;
+        sqlx::query(
+            "UPDATE transactions SET status = $1 WHERE hash = $2"
+        )
+        .bind(status)
+        .bind(hash)
+        .execute(pool)
+        .await?;
         
         debug!("交易状态更新成功");
         Ok(())
     }
 
-    /// 获取已确认的交易列表
-    /// 
-    /// # 返回值
-    /// - `Result<Vec<Transaction>, LedgerError>`: 成功返回已确认的交易列表，失败返回错误
-    pub fn get_confirmed_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
-        debug!("正在获取已确认交易");
-        let conn = self.conn.lock()?;
-        
-        let mut stmt = conn.prepare(
-            "SELECT * FROM transactions WHERE status = 'confirmed' ORDER BY timestamp DESC"
-        ).map_err(LedgerError::DatabaseError)?;
-        
-        let transactions = stmt.query_map([], |row| {
-            Ok(Transaction {
-                transaction_type: serde_json::from_str(&row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                from: row.get(2)?,
-                to: row.get(3)?,
-                transfer_amount: Amount::from_str(&row.get::<_, String>(4)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                nonce: row.get::<_, String>(5)?
-                    .parse::<u64>()  // 或其他适当的数字类型
-                    .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                        5,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                timestamp: chrono::DateTime::from_timestamp(
-                    row.get::<_, String>(7)?
-                        .parse::<i64>()
-                        .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                            7,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    0
-                ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                    7,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp"))
-                ))?,
-                fee: Amount::from_str(&row.get::<_, String>(8)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        8,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                transaction_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-            })
-        }).map_err(LedgerError::DatabaseError)?;
-    
-        let result = transactions.collect::<Result<Vec<_>, _>>()
-            .map_err(LedgerError::DatabaseError)?;
-        
-        debug!("获取到 {} 笔已确认交易", result.len());
-        Ok(result)
-    }
-
     /// 清理已确认的交易
-    /// 
-    /// # 返回值
-    /// - `Result<(), LedgerError>`: 成功返回 Ok(()), 失败返回错误
-    pub fn clean_confirmed_transactions(&self) -> Result<(), LedgerError> {
+    pub async fn clean_confirmed_transactions(&self) -> Result<(), LedgerError> {
         debug!("正在清理已确认交易");
-        let conn = self.conn.lock()?;
+        let pool = &*self.pool;
         
-        // 获取一个月前的时间戳
         let one_month_ago = chrono::Utc::now()
             .checked_sub_days(chrono::Days::new(30))
-            .ok_or_else(|| LedgerError::InvalidData("Failed to calculate date one month ago".to_string()))?
+            .ok_or_else(|| LedgerError::InvalidData("无法计算一个月前的日期".to_string()))?
             .timestamp();
         
-        conn.execute(
+        sqlx::query(
             "DELETE FROM transactions 
             WHERE status = 'confirmed' 
-            AND CAST(timestamp AS INTEGER) < ?1",
-            [one_month_ago.to_string()],
-        ).map_err(LedgerError::DatabaseError)?;
+            AND timestamp < $1"
+        )
+        .bind(one_month_ago)
+        .execute(pool)
+        .await?;
         
         debug!("已确认交易清理完成");
         Ok(())
@@ -627,140 +510,116 @@ impl TransactionOperations {
 
 /// 区块数据库操作
 pub struct BlockOperations {
-    conn: Arc<Mutex<Connection>>,
+    pool: Arc<SqlitePool>,
 }
 
 impl BlockOperations {
-    pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+    pub fn new(pool: Arc<SqlitePool>) -> Self {
+        Self { pool }
     }
 
-    // 辅助方法：加载区块的交易记录
-    fn load_block_transactions(&self, block_hash: &str) -> Result<Vec<Transaction>, rusqlite::Error> {
-        let conn = self.conn.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
-        
-        let mut stmt = conn.prepare(
-            "SELECT * FROM transactions WHERE block_hash = ?1"
-        )?;
-        
-        let transactions = stmt.query_map([block_hash], |row| {
-            Ok(Transaction {
-                transaction_type: serde_json::from_str(&row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                from: row.get(2)?,
-                to: row.get(3)?,
-                transfer_amount: Amount::from_str(&row.get::<_, String>(4)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                nonce: row.get::<_, String>(5)?
-                    .parse::<u64>()
-                    .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                        5,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                timestamp: chrono::DateTime::from_timestamp(
-                    row.get::<_, String>(7)?
-                        .parse::<i64>()
-                        .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                            7,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    0
-                ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                    7,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp"))
-                ))?,
-                fee: Amount::from_str(&row.get::<_, String>(8)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        8,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                transaction_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
+    /// 加载区块的交易记录
+    async fn load_block_transactions(&self, block_hash: &str) -> Result<Vec<Transaction>, LedgerError> {
+        debug!("正在加载区块交易: {}", block_hash);
+        let pool = &*self.pool;
+
+        #[derive(sqlx::FromRow)]
+        struct TransactionRow {
+            hash: String,
+            transaction_type: String,
+            from_address: String,
+            to_address: String,
+            transfer_amount: String,
+            nonce: i64,
+            signature: String,
+            timestamp: i64,
+            fee: String,
+            block_hash: Option<String>,
+            status: String,
+        }
+
+        let rows = sqlx::query_as::<_, TransactionRow>(
+            "SELECT * FROM transactions WHERE block_hash = $1"
+        )
+        .bind(block_hash)
+        .fetch_all(pool)
+        .await?;
+
+        let transactions = rows.into_iter()
+            .map(|row| {
+                Ok(Transaction {
+                    transaction_type: serde_json::from_str(&row.transaction_type)?,
+                    from: row.from_address,
+                    to: row.to_address,
+                    transfer_amount: Amount::from_str(&row.transfer_amount)
+                        .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                    nonce: row.nonce as u64,
+                    signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    fee: Amount::from_str(&row.fee)
+                        .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                    transaction_hash: to_hash(hex::decode(row.hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                })
             })
-        })?;
-    
-        transactions.collect()
+            .collect::<Result<Vec<_>, LedgerError>>()?;
+
+        debug!("加载到 {} 笔交易", transactions.len());
+        Ok(transactions)
     }
 
-    pub fn insert_block(&self, block: &Block) -> Result<(), LedgerError> {
+    /// 插入新区块
+    pub async fn insert_block(&self, block: &Block) -> Result<(), LedgerError> {
         debug!("正在插入区块: {:?}", hex::encode(&block.header.block_hash));
-        let mut conn = self.conn.lock()?;
+        let pool = &*self.pool;
 
-        // 开始事务
-        let transaction = conn.transaction().map_err(LedgerError::DatabaseError)?;
+        let mut transaction = pool.begin().await?;
 
         // 1. 遍历所有交易，检查并更新状态
         for block_transaction in &block.transactions {
             let hash = hex::encode(&block_transaction.transaction_hash);
-            let status: Option<String> = transaction.query_row(
-                "SELECT status FROM transactions WHERE hash = ?1",
-                [&hash],
-                |row| row.get(0)
-            ).optional().map_err(LedgerError::DatabaseError)?;
+            let status: Option<String> = sqlx::query_scalar(
+                "SELECT status FROM transactions WHERE hash = $1"
+            )
+            .bind(&hash)
+            .fetch_optional(&mut *transaction)
+            .await?;
 
             match status {
                 None => {
                     // 交易不存在，插入交易记录，状态为 confirmed
-                    transaction.execute(
+                    sqlx::query(
                         "INSERT INTO transactions (
                             hash, transaction_type, from_address, to_address, transfer_amount,
                             nonce, signature, timestamp, fee, block_hash, status
-                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'confirmed')",
-                        params![
-                            &hash,
-                            &format!("{:?}", block_transaction.transaction_type),
-                            &block_transaction.from,
-                            &block_transaction.to,
-                            &block_transaction.transfer_amount.to_string(),
-                            &block_transaction.nonce,
-                            &hex::encode(&block_transaction.signature),
-                            &block_transaction.timestamp.timestamp(),
-                            &block_transaction.fee.to_string(),
-                            &hex::encode(&block.header.block_hash)
-                        ],
-                    ).map_err(LedgerError::DatabaseError)?;
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed')"
+                    )
+                    .bind(&hash)
+                    .bind(&format!("{:?}", block_transaction.transaction_type))
+                    .bind(&block_transaction.from)
+                    .bind(&block_transaction.to)
+                    .bind(&block_transaction.transfer_amount.to_string())
+                    .bind(block_transaction.nonce as i64)
+                    .bind(&hex::encode(&block_transaction.signature))
+                    .bind(block_transaction.timestamp.timestamp())
+                    .bind(&block_transaction.fee.to_string())
+                    .bind(&hex::encode(&block.header.block_hash))
+                    .execute(&mut *transaction)
+                    .await?;
                 },
                 Some(current_status) => {
                     if current_status == "pending" {
                         // 交易存在且状态为 pending，更新状态为 confirmed，并关联区块哈希
-                        transaction.execute(
-                            "UPDATE transactions SET status = 'confirmed', block_hash = ?1 WHERE hash = ?2",
-                            [&hex::encode(&block.header.block_hash), &hash],
-                        ).map_err(LedgerError::DatabaseError)?;
+                        sqlx::query(
+                            "UPDATE transactions SET status = 'confirmed', block_hash = $1 WHERE hash = $2"
+                        )
+                        .bind(&hex::encode(&block.header.block_hash))
+                        .bind(&hash)
+                        .execute(&mut *transaction)
+                        .await?;
                     } else if current_status == "confirmed" {
-                        // 交易已确认，返回错误
                         return Err(LedgerError::TransactionAlreadyConfirmed(hash));
                     }
                 }
@@ -768,442 +627,257 @@ impl BlockOperations {
         }
 
         // 2. 插入区块头
-        transaction.execute(
+        sqlx::query(
             "INSERT INTO blocks (
                 block_hash, parent_hash, height, timestamp,
                 merkle_root, validator, signature
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            [
-                &hex::encode(&block.header.block_hash),
-                &hex::encode(&block.header.parent_hash),
-                &block.header.height.to_string(),
-                &block.header.timestamp.timestamp().to_string(),
-                &hex::encode(&block.header.merkle_root),
-                &block.header.validator,
-                &hex::encode(&block.header.signature),
-            ],
-        ).map_err(LedgerError::DatabaseError)?;
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+        )
+        .bind(&hex::encode(&block.header.block_hash))
+        .bind(&hex::encode(&block.header.parent_hash))
+        .bind(block.header.height as i64)
+        .bind(block.header.timestamp.timestamp())
+        .bind(&hex::encode(&block.header.merkle_root))
+        .bind(&block.header.validator)
+        .bind(&hex::encode(&block.header.signature))
+        .execute(&mut *transaction)
+        .await?;
 
         // 3. 提交事务
-        transaction.commit().map_err(LedgerError::DatabaseError)?;
+        transaction.commit().await?;
 
         debug!("区块及其交易记录插入成功");
         Ok(())
     }
 
-    pub fn get_latest_block(&self) -> Result<Option<Block>, LedgerError> {
+    /// 获取最新区块
+    pub async fn get_latest_block(&self) -> Result<Option<Block>, LedgerError> {
         debug!("正在获取最新区块");
-        let conn = self.conn.lock()?;
-        
-        let mut stmt = conn.prepare(
+        let pool = &*self.pool;
+
+        #[derive(sqlx::FromRow)]
+        struct BlockRow {
+            block_hash: String,
+            parent_hash: String,
+            height: i64,
+            timestamp: i64,
+            merkle_root: String,
+            validator: String,
+            signature: String,
+        }
+
+        let row = sqlx::query_as::<_, BlockRow>(
             "SELECT * FROM blocks ORDER BY height DESC LIMIT 1"
-        ).map_err(LedgerError::DatabaseError)?;
-        
-        let block = stmt.query_row([], |row| {
-            let header = BlockHeader {
-                block_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                    0,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                ))?)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                    0,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                ))?,
-                parent_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                height: row.get(2)?,
-                timestamp: chrono::DateTime::from_timestamp(
-                    row.get::<_, String>(3)?
-                        .parse::<i64>()
-                        .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                            3,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    0
-                ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                    3,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp"))
-                ))?,
-                merkle_root: to_hash(hex::decode(row.get::<_, String>(4)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                validator: row.get(5)?,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                block_number: row.get(2)?,
-                previous_block_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-            };
-            
-            let block_hash = hex::encode(&header.block_hash);
-            let transactions = self.load_block_transactions(&block_hash)?;
-            
-            Ok(Block {
-                header,
-                transactions,
-            })
-        }).optional().map_err(LedgerError::DatabaseError)?;
-        
-        debug!("最新区块获取成功");
-        Ok(block)
-    }
+        )
+        .fetch_optional(pool)
+        .await?;
 
-    pub fn get_block_by_hash(&self, hash: &str) -> Result<Option<Block>, LedgerError> {
-        debug!("正在通过哈希获取区块: {}", hash);
-        let conn = self.conn.lock()?;
-        
-        let mut stmt = conn.prepare(
-            "SELECT * FROM blocks WHERE block_hash = ?1"
-        ).map_err(LedgerError::DatabaseError)?;
-        
-        let block = stmt.query_row([hash], |row| {
-            let header = BlockHeader {
-                block_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                parent_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                height: row.get(2)?,
-                timestamp: chrono::DateTime::from_timestamp(
-                    row.get::<_, String>(3)?
-                        .parse::<i64>()
-                        .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                            3,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    0
-                ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                    3,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp"))
-                ))?,
-                merkle_root: to_hash(hex::decode(row.get::<_, String>(4)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                validator: row.get(5)?,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                block_number: row.get(2)?,
-                previous_block_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-            };
-            
-            let transactions = self.load_block_transactions(hash)?;
-            
-            Ok(Block {
-                header,
-                transactions,
-            })
-        }).optional().map_err(LedgerError::DatabaseError)?;
-        
-        debug!("区块获取成功");
-        Ok(block)
-    }
-
-    // 获取区块高度
-    pub fn get_block_height(&self) -> Result<u64, LedgerError> {
-        let conn = self.conn.lock()?;
-        let height: Option<u64> = conn.query_row(
-            "SELECT MAX(height) FROM blocks",
-            [],
-            |row| row.get(0)
-        ).optional().map_err(LedgerError::DatabaseError)?;
-        
-        Ok(height.unwrap_or(0))
-    }
-
-    pub fn get_block_by_height(&self, height: u64) -> Result<Option<Block>, LedgerError> {
-        debug!("正在通过高度获取区块: {}", height);
-        let conn = self.conn.lock()?;
-        
-        let mut stmt = conn.prepare(
-            "SELECT * FROM blocks WHERE height = ?1"
-        ).map_err(LedgerError::DatabaseError)?;
-        
-        let block = stmt.query_row([height.to_string()], |row| {
-            let header = BlockHeader {
-                block_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                parent_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                height: row.get(2)?,
-                timestamp: chrono::DateTime::from_timestamp(
-                    row.get::<_, String>(3)?
-                        .parse::<i64>()
-                        .map_err(|e: std::num::ParseIntError| rusqlite::Error::FromSqlConversionFailure(
-                            3,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    0
-                ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                    3,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp"))
-                ))?,
-                merkle_root: to_hash(hex::decode(row.get::<_, String>(4)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        4,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                validator: row.get(5)?,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-                block_number: row.get(2)?,
-                previous_block_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?)
-                    .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                        1,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                    ))?,
-            };
-            
-            let block_hash = hex::encode(&header.block_hash);
-            let transactions = self.load_block_transactions(&block_hash)?;
-            
-            Ok(Block {
-                header,
-                transactions,
-            })
-        }).optional().map_err(LedgerError::DatabaseError)?;
-        
-        debug!("区块获取成功");
-        Ok(block)
-    }
-
-    /// 获取指定范围内的区块
-    /// 
-    /// # 参数
-    /// * `start_height` - 起始高度（包含）
-    /// * `end_height` - 结束高度（包含）
-    /// 
-    /// # 返回值
-    /// - `Result<Vec<Block>, LedgerError>`: 成功返回区块列表，失败返回错误
-    pub fn get_blocks_by_range(&self, start_height: u64, end_height: u64) -> Result<Vec<Block>, LedgerError> {
-        debug!("正在获取区块范围: {} -> {}", start_height, end_height);
-        let conn = self.conn.lock()?;
-        
-        let mut stmt = conn.prepare(
-            "SELECT * FROM blocks WHERE height >= ?1 AND height <= ?2 ORDER BY height ASC"
-        ).map_err(LedgerError::DatabaseError)?;
-        
-        let blocks = stmt.query_map(
-            [start_height.to_string(), end_height.to_string()], 
-            |row| {
+        match row {
+            Some(row) => {
                 let header = BlockHeader {
-                    block_hash: to_hash(hex::decode(row.get::<_, String>(0)?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            0,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            0,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    parent_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    height: row.get(2)?,
-                    timestamp: chrono::DateTime::from_timestamp(
-                        row.get::<_, String>(3)?
-                            .parse::<i64>()
-                            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                                3,
-                                rusqlite::types::Type::Text,
-                                Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                            ))?,
-                        0
-                    ).ok_or_else(|| rusqlite::Error::FromSqlConversionFailure(
-                        3,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid timestamp"))
-                    ))?,
-                    merkle_root: to_hash(hex::decode(row.get::<_, String>(4)?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            4,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            4,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    validator: row.get(5)?,
-                    signature: SignatureWrapper::from_bytes(&hex::decode(row.get::<_, String>(6)?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            6,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            6,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
-                    block_number: row.get(2)?,
-                    previous_block_hash: to_hash(hex::decode(row.get::<_, String>(1)?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?)
-                        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-                        ))?,
+                    block_hash: to_hash(hex::decode(&row.block_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    parent_hash: to_hash(hex::decode(&row.parent_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    height: row.height as u64,
+                    timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    merkle_root: to_hash(hex::decode(&row.merkle_root)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    validator: row.validator,
+                    signature: SignatureWrapper::from_bytes(&hex::decode(&row.signature)?)
+                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    block_number: row.height as u64,
+                    previous_block_hash: to_hash(hex::decode(&row.parent_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
                 };
-                
-                let block_hash = hex::encode(&header.block_hash);
-                let transactions = self.load_block_transactions(&block_hash)?;
-                
-                Ok(Block {
+
+                let transactions = self.load_block_transactions(&row.block_hash).await?;
+
+                Ok(Some(Block {
                     header,
                     transactions,
-                })
-            }
-        ).map_err(LedgerError::DatabaseError)?;
-    
-        let result = blocks.collect::<Result<Vec<_>, _>>()
-            .map_err(LedgerError::DatabaseError)?;
-        
-        debug!("获取到 {} 个区块", result.len());
-        Ok(result)
+                }))
+            },
+            None => Ok(None)
+        }
     }
 
+    /// 通过哈希获取区块
+    pub async fn get_block_by_hash(&self, hash: &str) -> Result<Option<Block>, LedgerError> {
+        debug!("正在通过哈希获取区块: {}", hash);
+        let pool = &*self.pool;
+
+        #[derive(sqlx::FromRow)]
+        struct BlockRow {
+            block_hash: String,
+            parent_hash: String,
+            height: i64,
+            timestamp: i64,
+            merkle_root: String,
+            validator: String,
+            signature: String,
+        }
+
+        let row = sqlx::query_as::<_, BlockRow>(
+            "SELECT * FROM blocks WHERE block_hash = $1"
+        )
+        .bind(hash)
+        .fetch_optional(pool)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let header = BlockHeader {
+                    block_hash: to_hash(hex::decode(&row.block_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    parent_hash: to_hash(hex::decode(&row.parent_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    height: row.height as u64,
+                    timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    merkle_root: to_hash(hex::decode(&row.merkle_root)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    validator: row.validator,
+                    signature: SignatureWrapper::from_bytes(&hex::decode(&row.signature)?)
+                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    block_number: row.height as u64,
+                    previous_block_hash: to_hash(hex::decode(&row.parent_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                };
+
+                let transactions = self.load_block_transactions(&row.block_hash).await?;
+
+                Ok(Some(Block {
+                    header,
+                    transactions,
+                }))
+            },
+            None => Ok(None)
+        }
+    }
+
+    /// 获取区块高度
+    pub async fn get_block_height(&self) -> Result<u64, LedgerError> {
+        let pool = &*self.pool;
+        let height: Option<i64> = sqlx::query_scalar(
+            "SELECT MAX(height) FROM blocks"
+        )
+        .fetch_optional(pool)
+        .await?;
+        
+        Ok(height.unwrap_or(0) as u64)
+    }
+
+    /// 通过高度获取区块
+    pub async fn get_block_by_height(&self, height: u64) -> Result<Option<Block>, LedgerError> {
+        debug!("正在通过高度获取区块: {}", height);
+        let pool = &*self.pool;
+
+        #[derive(sqlx::FromRow)]
+        struct BlockRow {
+            block_hash: String,
+            parent_hash: String,
+            height: i64,
+            timestamp: i64,
+            merkle_root: String,
+            validator: String,
+            signature: String,
+        }
+
+        let row = sqlx::query_as::<_, BlockRow>(
+            "SELECT * FROM blocks WHERE height = $1"
+        )
+        .bind(height as i64)
+        .fetch_optional(pool)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let header = BlockHeader {
+                    block_hash: to_hash(hex::decode(&row.block_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    parent_hash: to_hash(hex::decode(&row.parent_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    height: row.height as u64,
+                    timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    merkle_root: to_hash(hex::decode(&row.merkle_root)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    validator: row.validator,
+                    signature: SignatureWrapper::from_bytes(&hex::decode(&row.signature)?)
+                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    block_number: row.height as u64,
+                    previous_block_hash: to_hash(hex::decode(&row.parent_hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                };
+
+                let transactions = self.load_block_transactions(&row.block_hash).await?;
+
+                Ok(Some(Block {
+                    header,
+                    transactions,
+                }))
+            },
+            None => Ok(None)
+        }
+    }
+
+    /// 获取指定高度范围内的区块
+    pub async fn get_blocks_by_range(&self, start_height: u64, end_height: u64) -> Result<Vec<Block>, LedgerError> {
+        debug!("正在获取区块范围: {} -> {}", start_height, end_height);
+        let pool = &*self.pool;
+
+        #[derive(sqlx::FromRow)]
+        struct BlockRow {
+            block_hash: String,
+            parent_hash: String,
+            height: i64,
+            timestamp: i64,
+            merkle_root: String,
+            validator: String,
+            signature: String,
+        }
+
+        let rows = sqlx::query_as::<_, BlockRow>(
+            "SELECT * FROM blocks WHERE height >= $1 AND height <= $2 ORDER BY height ASC"
+        )
+        .bind(start_height as i64)
+        .bind(end_height as i64)
+        .fetch_all(pool)
+        .await?;
+
+        let mut blocks = Vec::new();
+        for row in rows {
+            let header = BlockHeader {
+                block_hash: to_hash(hex::decode(&row.block_hash)?)
+                    .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                parent_hash: to_hash(hex::decode(&row.parent_hash)?)
+                    .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                height: row.height as u64,
+                timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                    .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                merkle_root: to_hash(hex::decode(&row.merkle_root)?)
+                    .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                validator: row.validator,
+                signature: SignatureWrapper::from_bytes(&hex::decode(&row.signature)?)
+                    .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                block_number: row.height as u64,
+                previous_block_hash: to_hash(hex::decode(&row.parent_hash)?)
+                    .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+            };
+
+            let transactions = self.load_block_transactions(&row.block_hash).await?;
+
+            blocks.push(Block {
+                header,
+                transactions,
+            });
+        }
+
+        debug!("获取到 {} 个区块", blocks.len());
+        Ok(blocks)
+    }
 }
 
 

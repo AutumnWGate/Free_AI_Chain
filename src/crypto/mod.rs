@@ -11,7 +11,7 @@ pub enum CryptoError {
     #[error("Invalid hash")]
     InvalidHash,
     #[error("Database error: {0}")]
-    DatabaseError(#[from] rusqlite::Error),
+    DatabaseError(#[from] sqlx::Error),
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
     #[error("Hex decode error: {0}")]

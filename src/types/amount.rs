@@ -3,7 +3,7 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use thiserror::Error;
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use std::error::Error;
 
 lazy_static! {
     /// 1 FAIC = 10^8
@@ -25,19 +25,17 @@ impl Amount {
     pub const DECIMALS: u64 = 8;
 
     /// 从 BigUint 创建 Amount
-    pub fn from_biguint(value: BigUint) -> Result<Self, &'static str> {
+    pub fn from_biguint(value: BigUint) -> Result<Self, AmountError> {
         if value > *MAX_AMOUNT {
-            return Err("Amount exceeds maximum value");
+            return Err(AmountError::InvalidAmount);
         }
         Ok(Amount { value })
     }
 
     /// 从字符串创建 Amount
-    pub fn from_str(value: &str) -> Result<Self, &'static str> {
-        let parsed_value = match BigUint::from_str(value) {
-            Ok(v) => v,
-            Err(_) => return Err("Invalid amount string"),
-        };
+    pub fn from_str(value: &str) -> Result<Self, AmountError> {
+        let parsed_value = BigUint::from_str(value)
+            .map_err(|_| AmountError::InvalidAmount)?;
         Self::from_biguint(parsed_value)
     }
 
@@ -119,32 +117,41 @@ impl std::ops::Div for Amount {
     }
 }
 
-impl FromSql for Amount {
-    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-        let value_str = String::column_result(value)?;
-        Amount::from_str(&value_str)
-            .map_err(|_| rusqlite::types::FromSqlError::InvalidType)
+impl sqlx::encode::Encode<'_, sqlx::Sqlite> for Amount {
+    fn encode_by_ref(&self, args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>) 
+        -> Result<sqlx::encode::IsNull, Box<dyn Error + Send + Sync>> 
+    {
+        let str_value = self.to_string();
+        <String as sqlx::encode::Encode<sqlx::Sqlite>>::encode(str_value, args)
     }
 }
 
-impl ToSql for Amount {
-    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::from(self.to_string()))
+impl sqlx::decode::Decode<'_, sqlx::Sqlite> for Amount {
+    fn decode(value: sqlx::sqlite::SqliteValueRef<'_>) -> Result<Self, sqlx::error::BoxDynError> {
+        let value_str = <String as sqlx::decode::Decode<sqlx::Sqlite>>::decode(value)?;
+        Amount::from_str(&value_str)
+            .map_err(|e| Box::new(sqlx::Error::Decode(e.into())) as Box<dyn std::error::Error + Send + Sync>)
+    }
+}
+
+impl sqlx::Type<sqlx::Sqlite> for Amount {
+    fn type_info() -> sqlx::sqlite::SqliteTypeInfo {
+        <String as sqlx::Type<sqlx::Sqlite>>::type_info()
     }
 }
 
 // 定义 AmountError 枚举
-#[derive(Error, Debug, Clone, PartialEq, Eq,  Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AmountError {
-    #[error("Invalid amount")]
+    #[error("无效金额")]
     InvalidAmount,
-    #[error("Insufficient balance")]
+    #[error("余额不足")]
     InsufficientBalance,
-    #[error("Amount overflow")]
+    #[error("金额溢出")]
     Overflow,
-    #[error("Amount underflow")]
+    #[error("金额下溢")]
     Underflow,
-    #[error("Division by zero")]
+    #[error("除数为零")]
     DivisionByZero,
 }
 

@@ -79,6 +79,21 @@ pub struct TransactionPoolSchema {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MerkleTreeSchema {
+    pub root_hash: Hash,
+    pub block_hash: Hash,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MerkleProofSchema {
+    pub transaction_hash: Hash,
+    pub root_hash: Hash,
+    pub proof_data: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransactionStatus {
     Pending,
     Confirmed,
