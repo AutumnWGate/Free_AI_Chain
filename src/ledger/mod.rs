@@ -40,7 +40,7 @@ pub struct LedgerManager {
     db_manager: DatabaseManager,
     event_sender: Sender<LedgerEvent>,
     event_receiver: Arc<Mutex<Receiver<LedgerEvent>>>,
-    merkle_manager: MerkleTreeManager,
+    merkle_manager: Arc<Mutex<MerkleTreeManager>>,
 }
 
 impl LedgerManager {
@@ -74,8 +74,8 @@ impl LedgerManager {
         let db_manager = DatabaseManager::new(pool.clone());
         let wallet_manager = WalletManager::new(pool.clone())?;
         let transaction_manager = TransactionManager::new(pool.clone())?;
-        let block_manager = BlockManager::new(pool.clone())?;
-        let merkle_manager = MerkleTreeManager::new(pool.clone());
+        let merkle_manager = Arc::new(Mutex::new(MerkleTreeManager::new(pool.clone())));
+        let block_manager = BlockManager::new(pool.clone(), merkle_manager.clone())?;
         // 初始化数据库表
         db_manager.initialize_tables().await?;
 

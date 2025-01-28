@@ -14,7 +14,7 @@ impl Wallet {
     /// 创建新钱包
     /// 
     /// 返回钱包实例和对应的助记词
-    pub fn new() -> Result<(Self, String), &'static str> {
+    pub fn create_wallet() -> Result<(Self, String), &'static str> {
         // 使用默认密码生成助记词
         let password = "default_secure_password"; // 建议从配置或参数传入 TODO
         let mnemonic = Address::generate_mnemonic_from_password(password)?;

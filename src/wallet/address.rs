@@ -2,6 +2,7 @@ use crate::crypto::address::Address as CryptoAddress;
 use crate::wallet::error::WalletError;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletAddress(CryptoAddress);
@@ -108,5 +109,11 @@ impl WalletAddress {
 impl AsRef<[u8]> for WalletAddress {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+impl fmt::Display for WalletAddress {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0.to_string())
     }
 }

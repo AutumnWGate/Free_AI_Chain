@@ -26,7 +26,7 @@ impl WalletManager {
     /// 创建新钱包
     pub async fn create_wallet(&self) -> Result<Wallet, LedgerError> {
         info!("正在创建钱包...");
-        let (wallet, mnemonic) = Wallet::new()
+        let (wallet, mnemonic) = Wallet::create_wallet()
             .map_err(|e| LedgerError::WalletError(e.to_string()))?;
         
         // 使用 db_ops 将钱包信息保存到数据库
@@ -99,7 +99,7 @@ impl WalletManager {
                         self.db_ops.update_wallet_balance(address, balance).await?;
                     }
                     WalletAction::CreateWallet => {
-                        let (wallet, mnemonic) = Wallet::new()
+                        let (wallet, mnemonic) = Wallet::create_wallet()
                             .map_err(|e| LedgerError::CreateWalletError(e.to_string()))?;
                         self.db_ops.insert_wallet(&wallet).await?;
                         debug!("创建钱包成功，助记词: {}", mnemonic);

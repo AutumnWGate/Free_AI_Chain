@@ -120,6 +120,7 @@ impl DatabaseManager {
                 root_hash TEXT PRIMARY KEY,
                 block_hash TEXT NOT NULL,
                 timestamp INTEGER NOT NULL,
+                height INTEGER NOT NULL,
                 FOREIGN KEY (block_hash) REFERENCES blocks(block_hash)
             )"
         )

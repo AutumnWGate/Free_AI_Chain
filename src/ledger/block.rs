@@ -58,14 +58,15 @@ impl BlockManager {
             timestamp: chrono::Utc::now(),
             merkle_root,
             validator: String::new(), // TODO: 添加验证者信息
-            signature: SignatureWrapper::from_bytes(&[0u8; 65]).unwrap_or_else(|_| SignatureWrapper::default()), // TODO: 添加签名
+            signature: SignatureWrapper::from_bytes(&[0u8; 65])
+                .map_err(|e| LedgerError::SignatureError(e.to_string()))?, // TODO: 添加签名
             block_hash: Hash::default(), // 临时值，后面会更新
             block_number: current_height,
             previous_block_hash: parent_hash,
         };
     
         // 计算区块哈希
-        let block_hash = calculate_block_hash(&header)?;
+        let block_hash = calculate_block_hash(&header).map_err(|e| LedgerError::BlockError(e.to_string()))?;
         
         // 创建完整区块
         let mut block = Block {
@@ -105,7 +106,7 @@ impl BlockManager {
 
     pub async fn verify_block(&self, block: &Block) -> Result<bool, LedgerError> {
         // 1. 验证区块哈希
-        let computed_hash = calculate_block_hash(&block.header)?;
+        let computed_hash = calculate_block_hash(&block.header).map_err(|e| LedgerError::BlockError(e.to_string()))?;
         if computed_hash != block.header.block_hash {
             error!("区块哈希验证失败");
             return Ok(false);
@@ -139,13 +140,23 @@ impl BlockManager {
 
     // 添加新方法：验证区块的默克尔树
     pub async fn verify_block_merkle_tree(&self, block: &Block) -> Result<bool, LedgerError> {
-        let merkle_manager = self.merkle_manager.lock().map_err(|e| {
+        let mut merkle_manager = self.merkle_manager.lock().map_err(|e| {
             error!("获取默克尔树管理器锁失败: {}", e);
             LedgerError::LockError(e.to_string())
         })?;
         
-        let computed_root = merkle_manager.build_merkle_tree(&block.transactions).await?;
-        Ok(computed_root == block.header.merkle_root)
+        // 如果交易列表为空，直接验证是否为默认哈希
+        if block.transactions.is_empty() {
+            return Ok(block.header.merkle_root == Hash::default());
+        }
+    
+        // 验证默克尔树根
+        let computed_root = merkle_manager.verify_merkle_root(
+            &block.transactions,
+            &block.header.merkle_root
+        ).await?;
+        
+        Ok(computed_root)
     }
 
     pub async fn get_block_management(&self) -> Result<BlockManagement, LedgerError> {

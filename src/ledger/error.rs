@@ -69,6 +69,9 @@ pub enum LedgerError {
     #[error("十六进制解码错误: {0}")]
     HexError(String),
 
+    #[error("区块错误: {0}")]
+    BlockError(String),
+
 }
 
 /// 为 LedgerError 实现 From trait，用于处理 PoisonError 的转换，简化错误处理代码，使得可以直接使用 ? 运算符

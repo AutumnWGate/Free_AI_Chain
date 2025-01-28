@@ -124,7 +124,7 @@ impl Address {
     }
 
     // 生成 SegWit 地址 (BIP84)
-    // 修改 new_segwit_address 函数
+    // 修改 NewSegwitAddress 函数
     pub fn new_segwit_address(mnemonic: &str) -> Result<Self, &'static str> {
         // 验证助记词不为空
         if mnemonic.trim().is_empty() {

@@ -168,6 +168,39 @@ impl MerkleTreeManager {
         Ok(())
     }
 
+    /// 验证默克尔树根
+    pub async fn verify_merkle_root(
+        &mut self,
+        transactions: &[Transaction],
+        expected_root: &Hash
+    ) -> Result<bool, LedgerError> {
+        // 构建交易哈希列表
+        let transaction_data: Vec<[u8; 32]> = transactions
+            .iter()
+            .map(|transaction| {
+                let mut hasher = Hash::default();
+                hasher.write(transaction.transaction_hash.as_ref());
+                hasher.hash()
+            })
+            .collect();
+
+        // 构建临时树进行验证
+        let tree = MerkleTree::<[u8; 32], Hash, VecStore<[u8; 32]>>::new(transaction_data)
+            .map_err(|e| {
+                error!("构建默克尔树失败: {}", e);
+                LedgerError::MerkleTreeError(e.to_string())
+            })?;
+            
+        let root = Hash::from_slice(&tree.root())
+            .map_err(|e| {
+                error!("获取默克尔树根哈希失败: {}", e);
+                LedgerError::MerkleTreeError(e.to_string())
+            })?;
+        
+        Ok(root == *expected_root)
+    }
+
+
 }
 
 /// 默克尔证明

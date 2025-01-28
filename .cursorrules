@@ -23,8 +23,9 @@
 - 命名规则
     1. 没有复数。
     2. 使用描述性名称。
-    3. 文件名使用蛇形命名法(snake_case)。
-    4. 代码中的类型名、trait名、函数名、变量名使用驼峰命名法，不使用下划线_和连字符-。
+    3. 函数名和方法名使用蛇形命名法（snake_case），如：create_wallet
+    4. 结构体、枚举、trait 使用驼峰命名法（PascalCase），如：WalletManager
+    5. 变量和模块名使用蛇形命名法（snake_case），如：wallet_address
     5. 不使用复数。
     6. 避免缩写，除非是非常普遍的。
     7. 保持一致性。

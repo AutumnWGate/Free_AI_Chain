@@ -50,6 +50,14 @@ pub enum WalletError {
     #[error("解密错误: {0}")]
     DecryptionError(String),
 
+    /// 交易相关错误
+    #[error("交易错误: {0}")]
+    TransactionError(String),
+
+    /// 查询错误
+    #[error("查询错误: {0}")]
+    QueryError(String),    
+
 }
 
 /// 密钥管理相关错误
