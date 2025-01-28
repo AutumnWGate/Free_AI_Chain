@@ -135,9 +135,13 @@ pub struct NetworkConfig {
 
 impl NetworkConfig {
     pub fn new(local_peer_id: PeerId) -> Result<Self, NetworkConfigError> {
-        let listen_address = "/ip4/0.0.0.0/tcp/0".parse()
-            .map_err(|e: libp2p::multiaddr::Error| NetworkConfigError::AddressParseError(e.to_string()))?;
-            
+        let listen_address =
+            "/ip4/0.0.0.0/tcp/0"
+                .parse()
+                .map_err(|e: libp2p::multiaddr::Error| {
+                    NetworkConfigError::AddressParseError(e.to_string())
+                })?;
+
         Ok(NetworkConfig {
             local_peer_id,
             listen_addresses: vec![listen_address],
@@ -152,10 +156,10 @@ impl NetworkConfig {
 // 默认实现 NetworkConfig 的默认值
 impl Default for NetworkConfig {
     fn default() -> Self {
-
-        let listen_address = "/ip4/0.0.0.0/tcp/0".parse()
+        let listen_address = "/ip4/0.0.0.0/tcp/0"
+            .parse()
             .expect("默认监听地址格式应该永远有效");
-            
+
         let config = NetworkConfig {
             local_peer_id: PeerId::random(),
             listen_addresses: vec![listen_address],
@@ -175,7 +179,7 @@ pub enum NetworkConfigError {
     IoError(std::io::Error),              // 文件操作错误
     TomlError(toml::de::Error),           // TOML解析错误
     TomlSerializeError(toml::ser::Error), // TOML序列化错误
-    AddressParseError(String),  // 新增
+    AddressParseError(String),            // 新增
 }
 
 // 为 NetworkConfigError 实现 Display trait，用于打印错误信息
@@ -184,12 +188,13 @@ impl std::fmt::Display for NetworkConfigError {
         match self {
             NetworkConfigError::IoError(e) => write!(f, "IO error: {}", e),
             NetworkConfigError::TomlError(e) => write!(f, "TOML deserialization error: {}", e),
-            NetworkConfigError::TomlSerializeError(e) => write!(f, "TOML serialization error: {}", e),
-            NetworkConfigError::AddressParseError(e) => write!(f, "Address parse error: {}", e),
+            NetworkConfigError::TomlSerializeError(e) => {
+                write!(f, "TOML serialization error: {}", e)
             }
+            NetworkConfigError::AddressParseError(e) => write!(f, "Address parse error: {}", e),
         }
     }
-
+}
 
 // 为 NetworkConfigError 实现 Error trait
 impl std::error::Error for NetworkConfigError {}

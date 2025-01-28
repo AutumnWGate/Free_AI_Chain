@@ -1,4 +1,3 @@
-
 use crate::types::block::Block;
 use merkletree::merkle::Element;
 
@@ -13,8 +12,7 @@ impl Element for Block {
     }
 
     fn from_slice(bytes: &[u8]) -> Self {
-        serde_json::from_slice(bytes)
-            .unwrap_or_else(|_| Block::default())
+        serde_json::from_slice(bytes).unwrap_or_else(|_| Block::default())
     }
 
     fn copy_to_slice(&self, bytes: &mut [u8]) {

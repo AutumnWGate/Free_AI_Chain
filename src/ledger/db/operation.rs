@@ -1,14 +1,13 @@
-
-use sqlx::sqlite::SqlitePool;
-use std::sync::Arc;
-use log::{debug, info, error};
 use super::super::error::LedgerError;
-use crate::types::wallet::Wallet;
-use crate::types::transaction::Transaction;
+use crate::crypto::hash::to_hash;
+use crate::crypto::signature::SignatureWrapper;
 use crate::types::amount::Amount;
 use crate::types::block::{Block, BlockHeader};
-use crate::crypto::signature::SignatureWrapper;
-use crate::crypto::hash::to_hash;
+use crate::types::transaction::Transaction;
+use crate::types::wallet::Wallet;
+use log::{debug, error, info};
+use sqlx::sqlite::SqlitePool;
+use std::sync::Arc;
 
 /// 数据库管理器
 pub struct DatabaseManager {
@@ -33,10 +32,11 @@ impl DatabaseManager {
                 address TEXT PRIMARY KEY,
                 balance TEXT NOT NULL,
                 nonce INTEGER NOT NULL
-            )"
+            )",
         )
         .execute(pool)
-        .await {
+        .await
+        {
             Ok(_) => debug!("钱包表创建成功"),
             Err(e) => {
                 error!("创建钱包表失败: {}", e);
@@ -59,10 +59,11 @@ impl DatabaseManager {
                 fee TEXT NOT NULL,
                 block_hash TEXT,
                 status TEXT NOT NULL
-            )"
+            )",
         )
         .execute(pool)
-        .await {
+        .await
+        {
             Ok(_) => debug!("交易表创建成功"),
             Err(e) => {
                 error!("创建交易表失败: {}", e);
@@ -81,10 +82,11 @@ impl DatabaseManager {
                 merkle_root TEXT NOT NULL,
                 validator TEXT NOT NULL,
                 signature TEXT NOT NULL
-            )"
+            )",
         )
         .execute(pool)
-        .await {
+        .await
+        {
             Ok(_) => debug!("区块表创建成功"),
             Err(e) => {
                 error!("创建区块表失败: {}", e);
@@ -103,17 +105,18 @@ impl DatabaseManager {
                 FOREIGN KEY (wallet_address) REFERENCES wallets(address),
                 FOREIGN KEY (transaction_hash) REFERENCES transactions(hash),
                 UNIQUE(wallet_address, transaction_hash)
-            )"
+            )",
         )
         .execute(pool)
-        .await {
+        .await
+        {
             Ok(_) => debug!("钱包交易历史表创建成功"),
             Err(e) => {
                 error!("创建钱包交易历史表失败: {}", e);
                 return Err(LedgerError::DatabaseError(e));
             }
         };
-        
+
         // 创建默克尔树表
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS merkle_roots (
@@ -122,11 +125,11 @@ impl DatabaseManager {
                 timestamp INTEGER NOT NULL,
                 height INTEGER NOT NULL,
                 FOREIGN KEY (block_hash) REFERENCES blocks(block_hash)
-            )"
+            )",
         )
         .execute(pool)
         .await?;
-        
+
         // 创建默克尔证明表
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS merkle_proofs (
@@ -136,7 +139,7 @@ impl DatabaseManager {
                 timestamp INTEGER NOT NULL,
                 FOREIGN KEY (transaction_hash) REFERENCES transactions(hash),
                 FOREIGN KEY (root_hash) REFERENCES merkle_roots(root_hash)
-            )"
+            )",
         )
         .execute(pool)
         .await?;
@@ -172,10 +175,6 @@ impl DatabaseManager {
     }
 }
 
-
-
-
-
 /// 钱包数据库操作
 pub struct WalletOperations {
     pool: Arc<SqlitePool>,
@@ -189,19 +188,18 @@ impl WalletOperations {
     pub async fn insert_wallet(&self, wallet: &Wallet) -> Result<(), LedgerError> {
         debug!("正在插入钱包记录: {}", wallet.address);
         let pool = &*self.pool;
-        
-        match sqlx::query(
-            "INSERT INTO wallets (address, balance, nonce) VALUES ($1, $2, $3)"
-        )
-        .bind(&wallet.address)
-        .bind(&wallet.balance.to_string())
-        .bind(wallet.nonce as i64)  // 将 u64 转换为 i64
-        .execute(pool)
-        .await {
+
+        match sqlx::query("INSERT INTO wallets (address, balance, nonce) VALUES ($1, $2, $3)")
+            .bind(&wallet.address)
+            .bind(&wallet.balance.to_string())
+            .bind(wallet.nonce as i64) // 将 u64 转换为 i64
+            .execute(pool)
+            .await
+        {
             Ok(_) => {
                 debug!("钱包记录插入成功");
                 Ok(())
-            },
+            }
             Err(e) => {
                 error!("插入钱包记录失败: {}", e);
                 Err(LedgerError::DatabaseError(e))
@@ -212,20 +210,21 @@ impl WalletOperations {
     pub async fn get_wallet(&self, address: &str) -> Result<Option<Wallet>, LedgerError> {
         debug!("正在查询钱包: {}", address);
         let pool = &*self.pool;
-    
+
         #[derive(sqlx::FromRow)]
         struct WalletRow {
             address: String,
             balance: String,
             nonce: i64,
         }
-    
+
         match sqlx::query_as::<_, WalletRow>(
-            "SELECT address, balance, nonce FROM wallets WHERE address = $1"
+            "SELECT address, balance, nonce FROM wallets WHERE address = $1",
         )
         .bind(address)
         .fetch_optional(pool)
-        .await {
+        .await
+        {
             Ok(Some(row)) => {
                 debug!("钱包查询成功");
                 Ok(Some(Wallet {
@@ -234,34 +233,37 @@ impl WalletOperations {
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
                     nonce: row.nonce as u64,
                 }))
-            },
+            }
             Ok(None) => {
                 debug!("钱包不存在");
                 Ok(None)
-            },
+            }
             Err(e) => {
                 error!("查询钱包失败: {}", e);
                 Err(LedgerError::DatabaseError(e))
             }
         }
     }
-    
+
     /// 更新钱包余额,转账成功后的余额
-    pub async fn update_wallet_balance(&self, address: &str, amount: Amount) -> Result<(), LedgerError> {
+    pub async fn update_wallet_balance(
+        &self,
+        address: &str,
+        amount: Amount,
+    ) -> Result<(), LedgerError> {
         debug!("正在更新钱包余额: {} -> {}", address, amount.to_string());
         let pool = &*self.pool;
 
-        match sqlx::query(
-            "UPDATE wallets SET balance = $1 WHERE address = $2"
-        )
-        .bind(&amount.to_string())
-        .bind(address)
-        .execute(pool)
-        .await {
+        match sqlx::query("UPDATE wallets SET balance = $1 WHERE address = $2")
+            .bind(&amount.to_string())
+            .bind(address)
+            .execute(pool)
+            .await
+        {
             Ok(_) => {
                 debug!("钱包余额更新成功");
                 Ok(())
-            },
+            }
             Err(e) => {
                 error!("更新钱包余额失败: {}", e);
                 Err(LedgerError::DatabaseError(e))
@@ -273,16 +275,15 @@ impl WalletOperations {
         debug!("正在删除钱包: {}", address);
         let pool = &*self.pool;
 
-        match sqlx::query(
-            "DELETE FROM wallets WHERE address = $1"
-        )
-        .bind(address)
-        .execute(pool)
-        .await {
+        match sqlx::query("DELETE FROM wallets WHERE address = $1")
+            .bind(address)
+            .execute(pool)
+            .await
+        {
             Ok(_) => {
                 debug!("钱包删除成功");
                 Ok(())
-            },
+            }
             Err(e) => {
                 error!("删除钱包失败: {}", e);
                 Err(LedgerError::DatabaseError(e))
@@ -290,20 +291,24 @@ impl WalletOperations {
         }
     }
 
-    pub async fn update_transaction_history(&self, address: &str, transactions: &[Transaction]) -> Result<(), LedgerError> {
+    pub async fn update_transaction_history(
+        &self,
+        address: &str,
+        transactions: &[Transaction],
+    ) -> Result<(), LedgerError> {
         debug!("正在更新钱包交易历史: {}", address);
         let pool = &*self.pool;
-        
+
         // 开始事务
         let mut transaction = pool.begin().await?;
-        
+
         for transaction_record in transactions {
             let hash = hex::encode(&transaction_record.transaction_hash);
             // 插入或忽略重复记录
             sqlx::query(
                 "INSERT OR IGNORE INTO wallet_transaction_history 
                 (wallet_address, transaction_hash, timestamp) 
-                VALUES ($1, $2, $3)"
+                VALUES ($1, $2, $3)",
             )
             .bind(address)
             .bind(&hash)
@@ -311,18 +316,36 @@ impl WalletOperations {
             .execute(&mut *transaction)
             .await?;
         }
-        
+
         // 提交事务
         transaction.commit().await?;
-        
+
         debug!("交易历史更新成功");
         Ok(())
     }
 
-    pub async fn get_transaction_history(&self, address: &str) -> Result<Vec<Transaction>, LedgerError> {
-        debug!("正在获取钱包交易历史: {}", address);
+    /// 获取全部交易历史（旧版）
+    pub async fn get_transaction_history(
+        &self,
+        address: &str,
+    ) -> Result<Vec<Transaction>, LedgerError> {
+        self.get_transaction_history_paged(address, 0, u32::MAX)
+            .await
+    }
+
+    /// 分页获取交易历史（新版）
+    pub async fn get_transaction_history_paged(
+        &self,
+        address: &str,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<Transaction>, LedgerError> {
+        debug!(
+            "正在获取分页交易历史: {} offset={} limit={}",
+            address, offset, limit
+        );
         let pool = &*self.pool;
-    
+
         // 定义数据库行结构
         #[derive(sqlx::FromRow)]
         struct TransactionRow {
@@ -338,44 +361,47 @@ impl WalletOperations {
             block_hash: Option<String>,
             status: String,
         }
-    
+
         // 执行查询
         let rows = sqlx::query_as::<_, TransactionRow>(
             "SELECT t.* FROM transactions t
             INNER JOIN wallet_transaction_history wth ON t.hash = wth.transaction_hash
             WHERE wth.wallet_address = $1
-            ORDER BY wth.timestamp DESC"
+            ORDER BY wth.timestamp DESC
+            LIMIT $2 OFFSET $3",
         )
         .bind(address)
+        .bind(limit as i64)
+        .bind(offset as i64)
         .fetch_all(pool)
         .await?;
-    
+
         // 转换查询结果
-        let transactions = rows.into_iter()
-        .map(|row| {
-            Ok(Transaction {
-                transaction_type: serde_json::from_str(&row.transaction_type)?,
-                from: row.from_address,
-                to: row.to_address,
-                transfer_amount: Amount::from_str(&row.transfer_amount)
-                    .map_err(|e| LedgerError::AmountError(e.to_string()))?,
-                nonce: row.nonce as u64,
-                signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
-                    .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
-                timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
-                    .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
-                fee: Amount::from_str(&row.fee)
-                    .map_err(|e| LedgerError::AmountError(e.to_string()))?,
-                transaction_hash: to_hash(hex::decode(row.hash)?)
-                    .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+        let transactions = rows
+            .into_iter()
+            .map(|row| {
+                Ok(Transaction {
+                    transaction_type: serde_json::from_str(&row.transaction_type)?,
+                    from: row.from_address,
+                    to: row.to_address,
+                    transfer_amount: Amount::from_str(&row.transfer_amount)
+                        .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                    nonce: row.nonce as u64,
+                    signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    fee: Amount::from_str(&row.fee)
+                        .map_err(|e| LedgerError::AmountError(e.to_string()))?,
+                    transaction_hash: to_hash(hex::decode(row.hash)?)
+                        .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, LedgerError>>()?;
-    
+            .collect::<Result<Vec<_>, LedgerError>>()?;
+
         debug!("获取到 {} 笔交易历史", transactions.len());
         Ok(transactions)
     }
-
 }
 
 /// 交易数据库操作
@@ -392,12 +418,12 @@ impl TransactionOperations {
     pub async fn insert_transaction(&self, transaction: Transaction) -> Result<(), LedgerError> {
         debug!("正在插入交易记录: {:?}", transaction.transaction_hash);
         let pool = &*self.pool;
-        
+
         sqlx::query(
             "INSERT INTO transactions (
                 hash, transaction_type, from_address, to_address, transfer_amount, 
                 nonce, signature, timestamp, fee, block_hash, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .bind(&hex::encode(&transaction.transaction_hash))
         .bind(&format!("{:?}", transaction.transaction_type))
@@ -408,11 +434,11 @@ impl TransactionOperations {
         .bind(&hex::encode(&transaction.signature))
         .bind(transaction.timestamp.timestamp())
         .bind(&transaction.fee.to_string())
-        .bind("")  // 初始区块哈希为空
-        .bind("pending")  // 初始状态为待处理
+        .bind("") // 初始区块哈希为空
+        .bind("pending") // 初始状态为待处理
         .execute(pool)
         .await?;
-        
+
         debug!("交易记录插入成功");
         Ok(())
     }
@@ -436,14 +462,15 @@ impl TransactionOperations {
             block_hash: Option<String>,
             status: String,
         }
-        
+
         let rows = sqlx::query_as::<_, TransactionRow>(
-            "SELECT * FROM transactions WHERE status = 'pending' ORDER BY fee DESC"
+            "SELECT * FROM transactions WHERE status = 'pending' ORDER BY fee DESC",
         )
         .fetch_all(pool)
         .await?;
 
-        let transactions = rows.into_iter()
+        let transactions = rows
+            .into_iter()
             .map(|row| {
                 Ok(Transaction {
                     transaction_type: serde_json::from_str(&row.transaction_type)?,
@@ -463,24 +490,26 @@ impl TransactionOperations {
                 })
             })
             .collect::<Result<Vec<_>, LedgerError>>()?;
-        
+
         debug!("获取到 {} 笔待处理交易", transactions.len());
         Ok(transactions)
     }
 
     /// 更新交易状态
-    pub async fn update_transaction_status(&self, hash: &str, status: &str) -> Result<(), LedgerError> {
+    pub async fn update_transaction_status(
+        &self,
+        hash: &str,
+        status: &str,
+    ) -> Result<(), LedgerError> {
         debug!("正在更新交易状态: {} -> {}", hash, status);
         let pool = &*self.pool;
-        
-        sqlx::query(
-            "UPDATE transactions SET status = $1 WHERE hash = $2"
-        )
-        .bind(status)
-        .bind(hash)
-        .execute(pool)
-        .await?;
-        
+
+        sqlx::query("UPDATE transactions SET status = $1 WHERE hash = $2")
+            .bind(status)
+            .bind(hash)
+            .execute(pool)
+            .await?;
+
         debug!("交易状态更新成功");
         Ok(())
     }
@@ -489,21 +518,21 @@ impl TransactionOperations {
     pub async fn clean_confirmed_transactions(&self) -> Result<(), LedgerError> {
         debug!("正在清理已确认交易");
         let pool = &*self.pool;
-        
+
         let one_month_ago = chrono::Utc::now()
             .checked_sub_days(chrono::Days::new(30))
             .ok_or_else(|| LedgerError::InvalidData("无法计算一个月前的日期".to_string()))?
             .timestamp();
-        
+
         sqlx::query(
             "DELETE FROM transactions 
             WHERE status = 'confirmed' 
-            AND timestamp < $1"
+            AND timestamp < $1",
         )
         .bind(one_month_ago)
         .execute(pool)
         .await?;
-        
+
         debug!("已确认交易清理完成");
         Ok(())
     }
@@ -520,7 +549,10 @@ impl BlockOperations {
     }
 
     /// 加载区块的交易记录
-    async fn load_block_transactions(&self, block_hash: &str) -> Result<Vec<Transaction>, LedgerError> {
+    async fn load_block_transactions(
+        &self,
+        block_hash: &str,
+    ) -> Result<Vec<Transaction>, LedgerError> {
         debug!("正在加载区块交易: {}", block_hash);
         let pool = &*self.pool;
 
@@ -539,14 +571,14 @@ impl BlockOperations {
             status: String,
         }
 
-        let rows = sqlx::query_as::<_, TransactionRow>(
-            "SELECT * FROM transactions WHERE block_hash = $1"
-        )
-        .bind(block_hash)
-        .fetch_all(pool)
-        .await?;
+        let rows =
+            sqlx::query_as::<_, TransactionRow>("SELECT * FROM transactions WHERE block_hash = $1")
+                .bind(block_hash)
+                .fetch_all(pool)
+                .await?;
 
-        let transactions = rows.into_iter()
+        let transactions = rows
+            .into_iter()
             .map(|row| {
                 Ok(Transaction {
                     transaction_type: serde_json::from_str(&row.transaction_type)?,
@@ -581,12 +613,11 @@ impl BlockOperations {
         // 1. 遍历所有交易，检查并更新状态
         for block_transaction in &block.transactions {
             let hash = hex::encode(&block_transaction.transaction_hash);
-            let status: Option<String> = sqlx::query_scalar(
-                "SELECT status FROM transactions WHERE hash = $1"
-            )
-            .bind(&hash)
-            .fetch_optional(&mut *transaction)
-            .await?;
+            let status: Option<String> =
+                sqlx::query_scalar("SELECT status FROM transactions WHERE hash = $1")
+                    .bind(&hash)
+                    .fetch_optional(&mut *transaction)
+                    .await?;
 
             match status {
                 None => {
@@ -595,7 +626,7 @@ impl BlockOperations {
                         "INSERT INTO transactions (
                             hash, transaction_type, from_address, to_address, transfer_amount,
                             nonce, signature, timestamp, fee, block_hash, status
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed')"
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed')",
                     )
                     .bind(&hash)
                     .bind(&format!("{:?}", block_transaction.transaction_type))
@@ -609,7 +640,7 @@ impl BlockOperations {
                     .bind(&hex::encode(&block.header.block_hash))
                     .execute(&mut *transaction)
                     .await?;
-                },
+                }
                 Some(current_status) => {
                     if current_status == "pending" {
                         // 交易存在且状态为 pending，更新状态为 confirmed，并关联区块哈希
@@ -632,7 +663,7 @@ impl BlockOperations {
             "INSERT INTO blocks (
                 block_hash, parent_hash, height, timestamp,
                 merkle_root, validator, signature
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)",
         )
         .bind(&hex::encode(&block.header.block_hash))
         .bind(&hex::encode(&block.header.parent_hash))
@@ -667,11 +698,10 @@ impl BlockOperations {
             signature: String,
         }
 
-        let row = sqlx::query_as::<_, BlockRow>(
-            "SELECT * FROM blocks ORDER BY height DESC LIMIT 1"
-        )
-        .fetch_optional(pool)
-        .await?;
+        let row =
+            sqlx::query_as::<_, BlockRow>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
 
         match row {
             Some(row) => {
@@ -699,8 +729,8 @@ impl BlockOperations {
                     header,
                     transactions,
                 }))
-            },
-            None => Ok(None)
+            }
+            None => Ok(None),
         }
     }
 
@@ -720,12 +750,10 @@ impl BlockOperations {
             signature: String,
         }
 
-        let row = sqlx::query_as::<_, BlockRow>(
-            "SELECT * FROM blocks WHERE block_hash = $1"
-        )
-        .bind(hash)
-        .fetch_optional(pool)
-        .await?;
+        let row = sqlx::query_as::<_, BlockRow>("SELECT * FROM blocks WHERE block_hash = $1")
+            .bind(hash)
+            .fetch_optional(pool)
+            .await?;
 
         match row {
             Some(row) => {
@@ -753,20 +781,18 @@ impl BlockOperations {
                     header,
                     transactions,
                 }))
-            },
-            None => Ok(None)
+            }
+            None => Ok(None),
         }
     }
 
     /// 获取区块高度
     pub async fn get_block_height(&self) -> Result<u64, LedgerError> {
         let pool = &*self.pool;
-        let height: Option<i64> = sqlx::query_scalar(
-            "SELECT MAX(height) FROM blocks"
-        )
-        .fetch_optional(pool)
-        .await?;
-        
+        let height: Option<i64> = sqlx::query_scalar("SELECT MAX(height) FROM blocks")
+            .fetch_optional(pool)
+            .await?;
+
         Ok(height.unwrap_or(0) as u64)
     }
 
@@ -786,12 +812,10 @@ impl BlockOperations {
             signature: String,
         }
 
-        let row = sqlx::query_as::<_, BlockRow>(
-            "SELECT * FROM blocks WHERE height = $1"
-        )
-        .bind(height as i64)
-        .fetch_optional(pool)
-        .await?;
+        let row = sqlx::query_as::<_, BlockRow>("SELECT * FROM blocks WHERE height = $1")
+            .bind(height as i64)
+            .fetch_optional(pool)
+            .await?;
 
         match row {
             Some(row) => {
@@ -819,13 +843,17 @@ impl BlockOperations {
                     header,
                     transactions,
                 }))
-            },
-            None => Ok(None)
+            }
+            None => Ok(None),
         }
     }
 
     /// 获取指定高度范围内的区块
-    pub async fn get_blocks_by_range(&self, start_height: u64, end_height: u64) -> Result<Vec<Block>, LedgerError> {
+    pub async fn get_blocks_by_range(
+        &self,
+        start_height: u64,
+        end_height: u64,
+    ) -> Result<Vec<Block>, LedgerError> {
         debug!("正在获取区块范围: {} -> {}", start_height, end_height);
         let pool = &*self.pool;
 
@@ -841,7 +869,7 @@ impl BlockOperations {
         }
 
         let rows = sqlx::query_as::<_, BlockRow>(
-            "SELECT * FROM blocks WHERE height >= $1 AND height <= $2 ORDER BY height ASC"
+            "SELECT * FROM blocks WHERE height >= $1 AND height <= $2 ORDER BY height ASC",
         )
         .bind(start_height as i64)
         .bind(end_height as i64)
@@ -880,6 +908,3 @@ impl BlockOperations {
         Ok(blocks)
     }
 }
-
-
-

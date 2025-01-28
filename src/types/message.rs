@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
+use crate::crypto::hash::Hash;
+use crate::types::amount::Amount;
 use crate::types::block::Block;
 use crate::types::node::NodeInfo;
-use crate::types::amount::Amount;
 use crate::types::transaction::Transaction;
-use crate::crypto::hash::Hash;
+use serde::{Deserialize, Serialize};
 
 /// 消息类型
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -18,11 +18,22 @@ pub enum MessageType {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Request {
     GetNodeInfo,
-    GetBalance { address: String },
-    SendTransaction { transaction: Transaction },
-    GetMerkleProof { transaction_hash: Hash, block_hash: Hash },
-    GetBlock { block_hash: Hash },
-    GetBlockByHeight { height: u64 },
+    GetBalance {
+        address: String,
+    },
+    SendTransaction {
+        transaction: Transaction,
+    },
+    GetMerkleProof {
+        transaction_hash: Hash,
+        block_hash: Hash,
+    },
+    GetBlock {
+        block_hash: Hash,
+    },
+    GetBlockByHeight {
+        height: u64,
+    },
     GetLatestBlock,
 }
 

@@ -32,15 +32,13 @@ impl Keypair for PublicKey {
     }
 }
 
-
-
 // 手动实现 Serialize
 impl Serialize for SignatureWrapper {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let bytes: &[u8] = &self.bytes;  // 将 &[u8; 65] 转换为 &[u8]
+        let bytes: &[u8] = &self.bytes; // 将 &[u8; 65] 转换为 &[u8]
         serializer.serialize_bytes(bytes)
     }
 }
@@ -59,7 +57,7 @@ impl<'de> Deserialize<'de> for SignatureWrapper {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignatureWrapper {
     signature: RecoverableSignature,
-    bytes: [u8; 65],  // 缓存序列化后的字节
+    bytes: [u8; 65], // 缓存序列化后的字节
 }
 
 impl SignatureWrapper {
@@ -67,15 +65,15 @@ impl SignatureWrapper {
         if bytes.len() != 65 {
             return Err("Invalid signature length");
         }
-        let recovery_id = RecoveryId::try_from(bytes[64] as i32)
-            .map_err(|_| "Invalid recovery ID")?;
+        let recovery_id =
+            RecoveryId::try_from(bytes[64] as i32).map_err(|_| "Invalid recovery ID")?;
         let signature = RecoverableSignature::from_compact(&bytes[..64], recovery_id)
             .map_err(|_| "Invalid signature")?;
-        
+
         let mut cached_bytes = [0u8; 65];
         cached_bytes.copy_from_slice(bytes);
-        
-        Ok(SignatureWrapper { 
+
+        Ok(SignatureWrapper {
             signature,
             bytes: cached_bytes,
         })
@@ -96,11 +94,11 @@ impl SignatureWrapper {
     }
 
     /// 验证签名
-    /// 
+    ///
     /// # 参数
     /// * `message` - 待验证的消息字节
     /// * `address` - 发送方地址
-    /// 
+    ///
     /// # 返回值
     /// * `Result<bool, String>` - 验证结果，Ok(true) 表示验证通过
     pub fn verify(&self, message: &[u8], address: &str) -> Result<bool, String> {
@@ -110,7 +108,8 @@ impl SignatureWrapper {
 
         // 2. 从签名恢复公钥
         let secp = secp256k1::Secp256k1::new();
-        let public_key = secp.recover_ecdsa(&message, &self.signature)
+        let public_key = secp
+            .recover_ecdsa(&message, &self.signature)
             .map_err(|e| format!("恢复公钥失败: {}", e))?;
 
         // 3. 从公钥生成地址
@@ -124,10 +123,10 @@ impl SignatureWrapper {
 
         // 5. 验证签名
         let standard_signature = self.signature.to_standard();
-        Ok(secp.verify_ecdsa(&message, &standard_signature, &public_key).is_ok())
+        Ok(secp
+            .verify_ecdsa(&message, &standard_signature, &public_key)
+            .is_ok())
     }
-
-
 }
 
 // 签名函数
@@ -136,15 +135,14 @@ pub fn sign(data: &[u8], private_key: &SecretKey) -> SignatureWrapper {
     // 使用 .into() 将 GenericArray 转换为 [u8; 32]
     let message = Message::from_digest(Sha256::digest(data).into());
     let signature = secp.sign_ecdsa_recoverable(&message, private_key);
-    SignatureWrapper { signature, bytes: [0u8; 65] }
+    SignatureWrapper {
+        signature,
+        bytes: [0u8; 65],
+    }
 }
 
 // 验证函数
-pub fn verify(
-    data: &[u8],
-    signature: &SignatureWrapper,
-    public_key: &PublicKey,
-) -> bool {
+pub fn verify(data: &[u8], signature: &SignatureWrapper, public_key: &PublicKey) -> bool {
     let secp = Secp256k1::new();
     // 使用 .into() 将 GenericArray 转换为 [u8; 32]
     let message = Message::from_digest(Sha256::digest(data).into());

@@ -36,4 +36,3 @@ fn load_or_create_config(
         },
     }
 }
-

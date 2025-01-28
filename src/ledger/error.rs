@@ -1,21 +1,20 @@
-use thiserror::Error;
 use std::sync::PoisonError;
-
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum LedgerError {
     #[error("数据库错误: {0}")]
     DatabaseError(#[from] sqlx::Error),
-    
+
     #[error("序列化错误: {0}")]
     SerializationError(#[from] serde_json::Error),
-    
+
     #[error("Merkle树错误: {0}")]
     MerkleTreeError(String),
-    
+
     #[error("交易验证错误: {0}")]
     TransactionVerifyError(String),
-    
+
     #[error("区块验证错误: {0}")]
     BlockVerifyError(String),
 
@@ -53,7 +52,6 @@ pub enum LedgerError {
     #[error("UTF8错误: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),
 
-
     #[error("十六进制解码错误: {0}")]
     HexDecodingError(#[from] hex::FromHexError),
 
@@ -71,7 +69,6 @@ pub enum LedgerError {
 
     #[error("区块错误: {0}")]
     BlockError(String),
-
 }
 
 /// 为 LedgerError 实现 From trait，用于处理 PoisonError 的转换，简化错误处理代码，使得可以直接使用 ? 运算符
@@ -86,4 +83,3 @@ impl From<String> for LedgerError {
         LedgerError::WalletError(err)
     }
 }
-

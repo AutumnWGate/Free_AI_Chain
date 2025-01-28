@@ -6,13 +6,11 @@ use libp2p::{
     request_response::{self, Behaviour, Codec, Config, Event, ProtocolSupport},
     swarm::SwarmEvent,
     PeerId, SwarmBuilder,
-
 };
 
-use std::{iter, time::Duration};
-use crate::types::{message::Request, message::Response};
 use crate::crypto::hash::Hash;
-
+use crate::types::{message::Request, message::Response};
+use std::{iter, time::Duration};
 
 #[derive(Debug, Clone)]
 pub struct FaicProtocol();
@@ -175,11 +173,7 @@ pub async fn handle_request(request: Request) -> Result<Response, Error> {
                 .find(|transaction| transaction.hash == transaction_hash)
                 .ok_or(Error::NotFound)?;
             // 将 Merkle 证明转换为 Vec<Vec<u8>>。
-            let merkle_proof: Vec<Hash> = block
-                .merkle_proof
-                .iter()
-                .map(|hash| *hash) 
-                .collect();
+            let merkle_proof: Vec<Hash> = block.merkle_proof.iter().map(|hash| *hash).collect();
             Ok(Response::GetMerkleProofResponse { merkle_proof })
         }
         // 处理 GetBlock 请求。
@@ -214,9 +208,8 @@ pub async fn start_listening(_transport: Boxed<(PeerId, StreamMuxerBox)>) -> Res
     // 直接生成 libp2p Secp256k1 密钥对
     let keypair = libp2p::identity::Keypair::generate_secp256k1();
     let peer_id = keypair.public().to_peer_id();
-    
-    println!("Local peer id: {}", peer_id);
 
+    println!("Local peer id: {}", peer_id);
 
     // 构建 Swarm
     let mut swarm = SwarmBuilder::with_existing_identity(keypair)
@@ -225,7 +218,7 @@ pub async fn start_listening(_transport: Boxed<(PeerId, StreamMuxerBox)>) -> Res
             libp2p::tcp::Config::default(),
             libp2p::noise::Config::new,
             libp2p::yamux::Config::default,
-        )?  // 直接使用 ? 操作符
+        )? // 直接使用 ? 操作符
         .with_behaviour(|_| behaviour)
         .expect("Behaviour creation cannot fail") // 使用 expect，因为这里不应该失败
         .build();

@@ -1,9 +1,9 @@
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use std::str::FromStr;
 use thiserror::Error;
-use std::error::Error;
 
 lazy_static! {
     /// 1 FAIC = 10^8
@@ -34,8 +34,7 @@ impl Amount {
 
     /// 从字符串创建 Amount
     pub fn from_str(value: &str) -> Result<Self, AmountError> {
-        let parsed_value = BigUint::from_str(value)
-            .map_err(|_| AmountError::InvalidAmount)?;
+        let parsed_value = BigUint::from_str(value).map_err(|_| AmountError::InvalidAmount)?;
         Self::from_biguint(parsed_value)
     }
 
@@ -118,9 +117,10 @@ impl std::ops::Div for Amount {
 }
 
 impl sqlx::encode::Encode<'_, sqlx::Sqlite> for Amount {
-    fn encode_by_ref(&self, args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>) 
-        -> Result<sqlx::encode::IsNull, Box<dyn Error + Send + Sync>> 
-    {
+    fn encode_by_ref(
+        &self,
+        args: &mut Vec<sqlx::sqlite::SqliteArgumentValue<'_>>,
+    ) -> Result<sqlx::encode::IsNull, Box<dyn Error + Send + Sync>> {
         let str_value = self.to_string();
         <String as sqlx::encode::Encode<sqlx::Sqlite>>::encode(str_value, args)
     }
@@ -129,8 +129,9 @@ impl sqlx::encode::Encode<'_, sqlx::Sqlite> for Amount {
 impl sqlx::decode::Decode<'_, sqlx::Sqlite> for Amount {
     fn decode(value: sqlx::sqlite::SqliteValueRef<'_>) -> Result<Self, sqlx::error::BoxDynError> {
         let value_str = <String as sqlx::decode::Decode<sqlx::Sqlite>>::decode(value)?;
-        Amount::from_str(&value_str)
-            .map_err(|e| Box::new(sqlx::Error::Decode(e.into())) as Box<dyn std::error::Error + Send + Sync>)
+        Amount::from_str(&value_str).map_err(|e| {
+            Box::new(sqlx::Error::Decode(e.into())) as Box<dyn std::error::Error + Send + Sync>
+        })
     }
 }
 
@@ -158,10 +159,11 @@ pub enum AmountError {
 // 为 Amount 实现 Default trait
 impl Default for Amount {
     fn default() -> Self {
-        Amount { value: BigUint::from(0u64) }
+        Amount {
+            value: BigUint::from(0u64),
+        }
     }
 }
-
 
 impl Ord for Amount {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {

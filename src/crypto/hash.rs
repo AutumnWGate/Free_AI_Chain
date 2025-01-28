@@ -1,7 +1,7 @@
-use sha2::{Sha256, Digest};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use hex::FromHex;
 use merkletree::hash::Algorithm;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use sha2::{Digest, Sha256};
 use std::hash::Hasher;
 
 #[derive(Debug, thiserror::Error)]
@@ -60,11 +60,9 @@ impl<'de> Deserialize<'de> for Hash {
         D: Deserializer<'de>,
     {
         let hex_str = String::deserialize(deserializer)?;
-        let bytes = Vec::from_hex(&hex_str)
-            .map_err(serde::de::Error::custom)?;
-            
-        Self::from_slice(&bytes)
-            .map_err(serde::de::Error::custom)
+        let bytes = Vec::from_hex(&hex_str).map_err(serde::de::Error::custom)?;
+
+        Self::from_slice(&bytes).map_err(serde::de::Error::custom)
     }
 }
 
@@ -72,8 +70,7 @@ impl<'de> Deserialize<'de> for Hash {
 pub fn sha256(data: &[u8]) -> Result<Hash, HashError> {
     let mut hasher = Sha256::new();
     hasher.update(data);
-    Hash::from_slice(&hasher.finalize())
-        .map_err(|_| HashError::ComputationError)
+    Hash::from_slice(&hasher.finalize()).map_err(|_| HashError::ComputationError)
 }
 
 /// 计算多个数据片段的组合哈希值
@@ -82,8 +79,7 @@ pub fn sha256_concat(data_pieces: &[&[u8]]) -> Result<Hash, HashError> {
     for piece in data_pieces {
         hasher.update(piece);
     }
-    Hash::from_slice(&hasher.finalize())
-        .map_err(|_| HashError::ComputationError)
+    Hash::from_slice(&hasher.finalize()).map_err(|_| HashError::ComputationError)
 }
 
 /// 将 Vec<u8> 转换为哈希

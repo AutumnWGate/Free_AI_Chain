@@ -6,7 +6,7 @@ pub enum WalletError {
     /// 密钥管理相关错误
     #[error("密钥管理错误: {0}")]
     KeyManager(#[from] KeyManagerError),
-    
+
     #[error("签名错误: {0}")]
     SignatureError(String),
 
@@ -56,8 +56,16 @@ pub enum WalletError {
 
     /// 查询错误
     #[error("查询错误: {0}")]
-    QueryError(String),    
+    QueryError(String),
 
+    #[error("交易历史查询失败: {0}")]
+    TransactionHistoryError(String),
+
+    #[error("交易反序列化失败: {0}")]
+    TransactionDeserialization(String),
+
+    #[error("金额转换失败: {0}")]
+    AmountConversion(String),
 }
 
 /// 密钥管理相关错误
@@ -94,9 +102,8 @@ pub enum KeyManagerError {
     /// 种子生成错误
     #[error("种子生成错误: {0}")]
     SeedGenerationError(String),
-    
+
     /// 没有密钥管理器
     #[error("没有密钥管理器")]
     NoKeyManager,
-
 }

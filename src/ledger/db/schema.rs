@@ -1,13 +1,12 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use crate::types::amount::Amount;
-use crate::types::transaction::TransactionType;
-use crate::types::transaction::Transaction;
-use crate::types::block::Block;
 use crate::crypto::hash::Hash;
 use crate::crypto::signature::SignatureWrapper;
+use crate::types::amount::Amount;
+use crate::types::block::Block;
+use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionType;
+use chrono::{DateTime, Utc};
 use hex;
-
+use serde::{Deserialize, Serialize};
 
 // 添加自定义序列化函数：将 Option<Vec<u8>> 转换为十六进制字符串或 None
 fn serialize_optional_hex<S>(data: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>

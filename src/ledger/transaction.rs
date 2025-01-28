@@ -1,15 +1,15 @@
+use super::db::operation::TransactionOperations;
+use super::error::LedgerError;
+use super::merkletree::MerkleTreeManager;
+use crate::crypto::hash::to_hash;
+use crate::crypto::hash::Hash;
+use crate::crypto::signature::SignatureWrapper;
+use crate::types::amount::Amount;
 use crate::types::ledger::TransactionManagement;
 use crate::types::transaction::Transaction;
-use super::error::LedgerError;
-use super::db::operation::TransactionOperations;
-use std::sync::Arc;
-use sqlx::SqlitePool;
 use log::{debug, error};
-use crate::types::amount::Amount;
-use crate::crypto::hash::to_hash;
-use crate::crypto::signature::SignatureWrapper;
-use super::merkletree::MerkleTreeManager;
-use crate::crypto::hash::Hash;
+use sqlx::SqlitePool;
+use std::sync::Arc;
 
 /// 交易管理器
 pub struct TransactionManager {
@@ -28,8 +28,7 @@ impl TransactionManager {
             db_ops,
             pool: pool.clone(),
             merkle_manager,
-            pool_for_wallet_manager: pool.clone(),//  暂时使用 pool 创建 WalletManager
-
+            pool_for_wallet_manager: pool.clone(), //  暂时使用 pool 创建 WalletManager
         })
     }
 
@@ -38,7 +37,7 @@ impl TransactionManager {
         debug!("正在获取交易管理信息...");
         let pending = self.get_pending_transactions().await?;
         let confirmed = self.get_confirmed_transactions().await?;
-        
+
         Ok(TransactionManagement {
             pending_transactions: pending,
             confirmed_transactions: confirmed,
@@ -73,7 +72,7 @@ impl TransactionManager {
 
         // 查询已确认的交易
         let rows = sqlx::query_as::<_, TransactionRow>(
-            "SELECT * FROM transactions WHERE status = 'confirmed'"
+            "SELECT * FROM transactions WHERE status = 'confirmed'",
         )
         .fetch_all(pool)
         .await?;
@@ -112,8 +111,14 @@ impl TransactionManager {
     }
 
     /// 构建交易列表的默克尔树
-    pub async fn build_transaction_merkle_tree(&mut self, transactions: &[Transaction]) -> Result<Hash, LedgerError> {
-        debug!("TransactionManager 正在构建交易默克尔树，交易数量: {}", transactions.len());
+    pub async fn build_transaction_merkle_tree(
+        &mut self,
+        transactions: &[Transaction],
+    ) -> Result<Hash, LedgerError> {
+        debug!(
+            "TransactionManager 正在构建交易默克尔树，交易数量: {}",
+            transactions.len()
+        );
         self.merkle_manager.build_merkle_tree(transactions).await
     }
 
@@ -122,46 +127,47 @@ impl TransactionManager {
         debug!("正在验证交易: {:?}", transaction);
         // 1. 签名验证
         debug!("开始签名验证...");
-        let transaction_bytes = serde_json::to_vec(transaction)
-            .map_err(|e| LedgerError::SerializationError(e))?;
+        let transaction_bytes =
+            serde_json::to_vec(transaction).map_err(|e| LedgerError::SerializationError(e))?;
 
         // 直接将 transaction.from (地址) 传递给 verify 方法
         let sender_address = &transaction.from;
 
-
-        if !transaction.signature.verify(&transaction_bytes, sender_address) //  使用 sender_address
-            .map_err(|e| LedgerError::SignatureError(e))? {
+        if !transaction
+            .signature
+            .verify(&transaction_bytes, sender_address) //  使用 sender_address
+            .map_err(|e| LedgerError::SignatureError(e))?
+        {
             error!("交易签名验证失败!");
             return Ok(false);
         }
         debug!("签名验证通过!");
 
         Ok(true) // 暂时只做签名验证，后续添加其他验证
-    }    
-
+    }
 
     /// 同步交易管理信息到数据库
     pub async fn sync_to_db(&self, management: &TransactionManagement) -> Result<(), LedgerError> {
         debug!("正在同步交易管理信息到数据库...");
-        
+
         // 开始事务
         let transaction = self.pool.begin().await?;
-        
+
         let result = async {
             // 同步待处理交易
             for tx in &management.pending_transactions {
                 self.db_ops.insert_transaction(tx.clone()).await?;
             }
-            
+
             // 同步已确认交易
             for tx in &management.confirmed_transactions {
-                self.db_ops.update_transaction_status(
-                    &hex::encode(&tx.transaction_hash), 
-                    "confirmed"
-                ).await?;
+                self.db_ops
+                    .update_transaction_status(&hex::encode(&tx.transaction_hash), "confirmed")
+                    .await?;
             }
             Ok::<(), LedgerError>(())
-        }.await;
+        }
+        .await;
 
         match result {
             Ok(_) => {

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use libp2p::{Multiaddr, PeerId};
+use serde::{Deserialize, Serialize};
 
 /// 节点信息
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -52,12 +52,12 @@ impl WalletAddress {
     /// 验证地址格式
     pub fn validate_address(address: &str) -> bool {
         debug!("正在验证地址格式: {}", address);
-        
+
         if address.is_empty() {
             warn!("地址为空");
             return false;
         }
-        
+
         if !address.starts_with("faic") {
             warn!("地址前缀错误，应为 'faic'");
             return false;
@@ -77,7 +77,7 @@ impl WalletAddress {
                     warn!("地址格式无效");
                 }
                 is_valid
-            },
+            }
             Err(e) => {
                 error!("地址解码失败: {}", e);
                 false

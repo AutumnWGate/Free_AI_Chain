@@ -1,16 +1,15 @@
-use bip39::{Mnemonic, Language};
-use bip32::{DerivationPath, XPrv, Seed, XPub};
-use std::str::FromStr;
-use secp256k1::{PublicKey, SecretKey};
-use log::debug;
+use crate::crypto::signature::{sign, verify, SignatureWrapper};
 use crate::wallet::error::KeyManagerError;
-use crate::crypto::signature::{SignatureWrapper, sign, verify};
-
+use bip32::{DerivationPath, Seed, XPrv, XPub};
+use bip39::{Language, Mnemonic};
+use log::debug;
+use secp256k1::{PublicKey, SecretKey};
+use std::str::FromStr;
 
 // FAIC 的币种 ID 1010101010 ，硬派生标识 0xBC34EB12
 const FAIC_COIN_TYPE: u32 = 0xBC34EB12;
-const MAX_DERIVATION_DEPTH: u8 = 5;  // BIP44 标准的最大深度
-const MAX_INDEX: u32 = 0x7fffffff;   // 最大索引值 (非硬化)
+const MAX_DERIVATION_DEPTH: u8 = 5; // BIP44 标准的最大深度
+const MAX_INDEX: u32 = 0x7fffffff; // 最大索引值 (非硬化)
 const HARDENED_INDEX_START: u32 = 0x80000000; // 硬化索引起始值
 
 #[derive(Debug)]
@@ -28,7 +27,6 @@ pub struct KeyManager {
     ///
     /// 记录了用于派生 `master_key` 和 `xpub` 的 BIP44 路径，方便追踪和管理密钥。
     derivation_path: DerivationPath,
-
 }
 
 impl KeyManager {
@@ -46,25 +44,26 @@ impl KeyManager {
     ///
     /// * `&'static str` - 错误信息字符串
     pub fn from_mnemonic(mnemonic: &str, password: &str) -> Result<Self, KeyManagerError> {
-
         //  验证密码复杂度
         if password.len() < 8 {
-            return Err(KeyManagerError::InvalidPassword("密码长度必须至少为8个字符".into()));
+            return Err(KeyManagerError::InvalidPassword(
+                "密码长度必须至少为8个字符".into(),
+            ));
         }
 
         // 检查是否包含至少一个大写字母
         if !password.chars().any(|c| c.is_ascii_uppercase()) {
-            return Err(KeyManagerError::InvalidPassword("密码必须包含至少一个大写字母".into()));
+            return Err(KeyManagerError::InvalidPassword(
+                "密码必须包含至少一个大写字母".into(),
+            ));
         }
 
         //  解析助记词，验证助记词的有效性
         let mnemonic_parsed = Mnemonic::parse_in(Language::English, mnemonic)
             .map_err(|_| KeyManagerError::InvalidMnemonic("无效的助记词".into()))?;
-        
+
         //  直接使用原始密码。这样才符合 BIP39 规范。
         let seed = Seed::new(mnemonic_parsed.to_seed(password));
-
-
 
         //  从种子生成根私钥 (m)，这是 BIP32 树的根节点
         let root_key = XPrv::new(seed)
@@ -82,9 +81,11 @@ impl KeyManager {
 
         //  从根私钥派生子私钥 (也称为 master key 或 account key)
         //    -  根据 BIP44 路径，从 root_key 逐层派生
-        let child_key = derivation_path.clone().into_iter().try_fold(root_key, |key, child_number| {
-            key.derive_child(child_number)
-        }).map_err(|_| KeyManagerError::DerivationError("派生子密钥失败".into()))?;
+        let child_key = derivation_path
+            .clone()
+            .into_iter()
+            .try_fold(root_key, |key, child_number| key.derive_child(child_number))
+            .map_err(|_| KeyManagerError::DerivationError("派生子密钥失败".into()))?;
 
         //  获取子私钥对应的扩展公钥 (xpub)
         //    -  扩展公钥可以安全地用于派生子公钥和生成地址，而无需私钥
@@ -98,18 +99,16 @@ impl KeyManager {
         })
     }
 
-
-
-
     /// 验证派生路径
     fn validate_derivation_path(path: &DerivationPath) -> Result<(), KeyManagerError> {
         let components: Vec<_> = path.clone().into_iter().collect();
-        
+
         // 验证深度
-        if components.len() != 5 {  // BIP44 要求精确的5层
+        if components.len() != 5 {
+            // BIP44 要求精确的5层
             return Err(KeyManagerError::InvalidPath("BIP44 路径必须是5层".into()));
         }
-        
+
         // 验证每一层
         match components.as_slice() {
             [purpose, coin_type, account, change, index] => {
@@ -123,7 +122,9 @@ impl KeyManager {
                 }
                 // account'
                 if !account.is_hardened() || account.0 >= HARDENED_INDEX_START {
-                    return Err(KeyManagerError::InvalidPath("第三层必须是有效的硬化账户索引".into()));
+                    return Err(KeyManagerError::InvalidPath(
+                        "第三层必须是有效的硬化账户索引".into(),
+                    ));
                 }
                 // change
                 if change.is_hardened() || change.0 > 1 {
@@ -131,12 +132,14 @@ impl KeyManager {
                 }
                 // address_index
                 if index.is_hardened() || index.0 > MAX_INDEX {
-                    return Err(KeyManagerError::InvalidPath("第五层必须是有效的地址索引".into()));
+                    return Err(KeyManagerError::InvalidPath(
+                        "第五层必须是有效的地址索引".into(),
+                    ));
                 }
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
-        
+
         Ok(())
     }
 
@@ -144,7 +147,7 @@ impl KeyManager {
     pub fn create_bip44_path(
         account: u32,
         change: bool,
-        address_index: u32
+        address_index: u32,
     ) -> Result<DerivationPath, KeyManagerError> {
         // 验证参数范围
         if account > MAX_INDEX {
@@ -172,16 +175,20 @@ impl KeyManager {
     /// 派生指定路径的子密钥
     pub fn derive_key(&self, path: &str) -> Result<XPrv, KeyManagerError> {
         debug!("派生子密钥，路径: {}", path);
-        
+
         let derivation_path = DerivationPath::from_str(path)
             .map_err(|_| KeyManagerError::InvalidPath("无效的派生路径格式".into()))?;
-    
+
         // 添加路径验证
         Self::validate_derivation_path(&derivation_path)?;
-    
-        derivation_path.clone().into_iter().try_fold(self.master_key.clone(), |key, child_number| {
-            key.derive_child(child_number)
-        }).map_err(|_| KeyManagerError::DerivationError("派生子密钥失败".into()))
+
+        derivation_path
+            .clone()
+            .into_iter()
+            .try_fold(self.master_key.clone(), |key, child_number| {
+                key.derive_child(child_number)
+            })
+            .map_err(|_| KeyManagerError::DerivationError("派生子密钥失败".into()))
     }
 
     /// 获取指定路径的公钥
@@ -196,25 +203,23 @@ impl KeyManager {
         // 从 master_key 获取私钥
         let secret_key = SecretKey::from_slice(&self.master_key.to_bytes())
             .map_err(|e| KeyManagerError::SignatureError(e.to_string()))?;
-            
+
         // 直接使用 signature.rs 中的 sign 函数
         Ok(sign(message, &secret_key))
     }
-
 
     /// 验证签名
     pub fn verify_signature(
         &self,
         message: &[u8],
         signature: &SignatureWrapper,
-        public_key: &XPub
+        public_key: &XPub,
     ) -> Result<bool, KeyManagerError> {
         // 转换公钥格式
         let pk = PublicKey::from_slice(&public_key.to_bytes())
             .map_err(|e| KeyManagerError::SignatureError(e.to_string()))?;
-            
+
         // 直接使用 signature.rs 中的 verify 函数
         Ok(verify(message, signature, &pk))
     }
-
 }

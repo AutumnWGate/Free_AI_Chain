@@ -1,8 +1,8 @@
+use crate::crypto::hash::{sha256_concat, Hash};
+use crate::crypto::signature::SignatureWrapper;
+use crate::types::transaction::Transaction;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use crate::crypto::hash::{Hash, sha256_concat};
-use crate::types::transaction::Transaction;
-use crate::crypto::signature::SignatureWrapper;
 use std::cell::RefCell;
 
 #[derive(Debug, thiserror::Error)]
@@ -40,8 +40,7 @@ impl Default for BlockHeader {
             timestamp: Utc::now(),
             merkle_root: Hash::new(),
             validator: String::new(),
-            signature: SignatureWrapper::from_bytes(&[0u8; 65])
-                .expect("默认签名应该总是有效的"), // 这里使用 expect 更合适，因为这是默认值
+            signature: SignatureWrapper::from_bytes(&[0u8; 65]).expect("默认签名应该总是有效的"), // 这里使用 expect 更合适，因为这是默认值
             block_hash: Hash::new(),
             block_number: 0,
             previous_block_hash: Hash::new(),
@@ -95,5 +94,6 @@ pub fn calculate_block_hash(header: &BlockHeader) -> Result<Hash, BlockError> {
         header.merkle_root.as_ref(),
         header.validator.as_bytes(),
         &header.signature.to_bytes().as_ref(),
-    ]).map_err(BlockError::HashError)
+    ])
+    .map_err(BlockError::HashError)
 }

@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use crate::types::wallet::Wallet;
 use crate::types::block::Block;
 use crate::types::transaction::Transaction;
+use crate::types::wallet::Wallet;
+use serde::{Deserialize, Serialize};
 
 /// 钱包管理相关数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub struct BlockManagement {
 pub struct TransactionManagement {
     pub pending_transactions: Vec<Transaction>,
     pub confirmed_transactions: Vec<Transaction>,
-    pub block_hash: Option<Vec<u8>>,  // 所属区块哈希
+    pub block_hash: Option<Vec<u8>>, // 所属区块哈希
 }
 
 /// 账本状态
