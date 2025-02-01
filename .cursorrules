@@ -59,7 +59,6 @@
 - 项目框架
     faic_core-->network网络模块
     faic_core-->wallet钱包模块
-    faic_core-->transaction交易模块
     faic_core-->ledger账本模块
     faic_core-->types数据类型模块
     faic_core-->crypto安全模块

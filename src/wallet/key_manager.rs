@@ -6,8 +6,8 @@ use log::debug;
 use secp256k1::{PublicKey, SecretKey};
 use std::str::FromStr;
 
-// FAIC 的币种 ID 1010101010 ，硬派生标识 0xBC34EB12
-const FAIC_COIN_TYPE: u32 = 0xBC34EB12;
+// FAIC 的币种 ID 1010101010 ，硬派生标识 0xbc34eb12
+const FAIC_COIN_TYPE: u32 = 0xbc34eb12;
 const MAX_DERIVATION_DEPTH: u8 = 5; // BIP44 标准的最大深度
 const MAX_INDEX: u32 = 0x7fffffff; // 最大索引值 (非硬化)
 const HARDENED_INDEX_START: u32 = 0x80000000; // 硬化索引起始值

@@ -17,7 +17,7 @@ pub struct Wallet {
     /// 钱包余额
     pub balance: Amount,
     /// 交易计数器
-    pub nonce: u64,
+    pub nonce: i64,
     /// 加密后的助记词 (可选)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypted_mnemonic: Option<Vec<u8>>,
@@ -178,7 +178,7 @@ impl Wallet {
     }
 
     /// 获取交易计数器
-    pub fn nonce(&self) -> u64 {
+    pub fn nonce(&self) -> i64 {
         self.nonce
     }
 

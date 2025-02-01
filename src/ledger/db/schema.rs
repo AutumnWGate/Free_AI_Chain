@@ -94,9 +94,14 @@ pub struct MerkleProofSchema {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransactionStatus {
-    Pending,
-    Confirmed,
-    Failed,
+    Created,    // 交易创建
+    Validating, // 验证中
+    Pending,    // 待处理（验证通过）
+    Locked,     // 金额锁定
+    Confirmed,  // 已确认（已打包到区块）
+    Failed,     // 失败
+    Expired,    // 超时
+    Rejected,   // 拒绝
 }
 
 // 添加 From/Into trait 实现，方便类型转换

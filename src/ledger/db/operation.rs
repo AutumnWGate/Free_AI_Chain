@@ -20,33 +20,33 @@ impl DatabaseManager {
         Self { pool }
     }
 
-    /// 初始化数据库表
+    /// 初始化数据库表（完整修正版）
     pub async fn initialize_tables(&self) -> Result<(), LedgerError> {
         debug!("正在初始化数据库表...");
         let pool = &*self.pool;
 
-        // 创建钱包表
-        debug!("正在创建钱包表...");
-        match sqlx::query(
-            "CREATE TABLE IF NOT EXISTS wallets (
+        // 必须显式执行钱包表创建
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS wallets (
                 address TEXT PRIMARY KEY,
                 balance TEXT NOT NULL,
-                nonce INTEGER NOT NULL
-            )",
+                nonce INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+            )
+            "#
         )
         .execute(pool)
         .await
-        {
-            Ok(_) => debug!("钱包表创建成功"),
-            Err(e) => {
-                error!("创建钱包表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e));
-            }
-        };
+        .map_err(|e| {
+            error!("创建wallets表失败: {}", e);
+            LedgerError::DatabaseError(e)
+        })?;
 
         // 创建交易表
-        debug!("正在创建交易表...");
-        match sqlx::query(
+        self.execute_table_creation(
+            "transactions",
             "CREATE TABLE IF NOT EXISTS transactions (
                 hash TEXT PRIMARY KEY,
                 transaction_type TEXT NOT NULL,
@@ -58,22 +58,31 @@ impl DatabaseManager {
                 timestamp INTEGER NOT NULL,
                 fee TEXT NOT NULL,
                 block_hash TEXT,
-                status TEXT NOT NULL
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
             )",
         )
-        .execute(pool)
-        .await
-        {
-            Ok(_) => debug!("交易表创建成功"),
-            Err(e) => {
-                error!("创建交易表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e));
-            }
-        };
+        .await?;
+
+        // 创建钱包交易历史表
+        self.execute_table_creation(
+            "wallet_transaction_history",
+            "CREATE TABLE IF NOT EXISTS wallet_transaction_history (
+                wallet_address TEXT NOT NULL,
+                transaction_hash TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                PRIMARY KEY (wallet_address, transaction_hash),
+                FOREIGN KEY (wallet_address) REFERENCES wallets(address),
+                FOREIGN KEY (transaction_hash) REFERENCES transactions(hash)
+            )",
+        )
+        .await?;
 
         // 创建区块表
-        debug!("正在创建区块表...");
-        match sqlx::query(
+        self.execute_table_creation(
+            "blocks",
             "CREATE TABLE IF NOT EXISTS blocks (
                 block_hash TEXT PRIMARY KEY,
                 parent_hash TEXT NOT NULL,
@@ -84,41 +93,11 @@ impl DatabaseManager {
                 signature TEXT NOT NULL
             )",
         )
-        .execute(pool)
-        .await
-        {
-            Ok(_) => debug!("区块表创建成功"),
-            Err(e) => {
-                error!("创建区块表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e));
-            }
-        };
-
-        // 创建钱包交易历史表
-        debug!("正在创建钱包交易历史表...");
-        match sqlx::query(
-            "CREATE TABLE IF NOT EXISTS wallet_transaction_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                wallet_address TEXT NOT NULL,
-                transaction_hash TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                FOREIGN KEY (wallet_address) REFERENCES wallets(address),
-                FOREIGN KEY (transaction_hash) REFERENCES transactions(hash),
-                UNIQUE(wallet_address, transaction_hash)
-            )",
-        )
-        .execute(pool)
-        .await
-        {
-            Ok(_) => debug!("钱包交易历史表创建成功"),
-            Err(e) => {
-                error!("创建钱包交易历史表失败: {}", e);
-                return Err(LedgerError::DatabaseError(e));
-            }
-        };
+        .await?;
 
         // 创建默克尔树表
-        sqlx::query(
+        self.execute_table_creation(
+            "merkle_roots",
             "CREATE TABLE IF NOT EXISTS merkle_roots (
                 root_hash TEXT PRIMARY KEY,
                 block_hash TEXT NOT NULL,
@@ -127,11 +106,11 @@ impl DatabaseManager {
                 FOREIGN KEY (block_hash) REFERENCES blocks(block_hash)
             )",
         )
-        .execute(pool)
         .await?;
 
         // 创建默克尔证明表
-        sqlx::query(
+        self.execute_table_creation(
+            "merkle_proofs",
             "CREATE TABLE IF NOT EXISTS merkle_proofs (
                 transaction_hash TEXT PRIMARY KEY,
                 root_hash TEXT NOT NULL,
@@ -141,36 +120,90 @@ impl DatabaseManager {
                 FOREIGN KEY (root_hash) REFERENCES merkle_roots(root_hash)
             )",
         )
-        .execute(pool)
         .await?;
 
-        // 创建索引
-        debug!("正在创建索引...");
-        for (index_name, query) in [
-            ("交易发送方索引", "CREATE INDEX IF NOT EXISTS idx_transactions_from ON transactions(from_address)"),
-            ("交易接收方索引", "CREATE INDEX IF NOT EXISTS idx_transactions_to ON transactions(to_address)"),
-            ("交易区块索引", "CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_hash)"),
-            ("区块高度索引", "CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height)"),
-            ("区块父哈希索引", "CREATE INDEX IF NOT EXISTS idx_blocks_parent ON blocks(parent_hash)"),
-            ("钱包历史索引", "CREATE INDEX IF NOT EXISTS idx_wallet_history_address ON wallet_transaction_history(wallet_address)"),
-            ("默克尔树根哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_roots_root_hash ON merkle_roots(root_hash)"),
-            ("默克尔树区块哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_roots_block_hash ON merkle_roots(block_hash)"),
-            ("默克尔证明交易哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_proofs_transaction_hash ON merkle_proofs(transaction_hash)"),
-            ("默克尔证明根哈希索引", "CREATE INDEX IF NOT EXISTS idx_merkle_proofs_root_hash ON merkle_proofs(root_hash)")
-        ] {
-            debug!("正在创建{}...", index_name);
-            match sqlx::query(query)
-                .execute(pool)
-                .await {
-                    Ok(_) => debug!("{}创建成功", index_name),
-                    Err(e) => {
-                        error!("创建{}失败: {}", index_name, e);
-                        return Err(LedgerError::DatabaseError(e));
-                    }
-                };
-        }
+        // 创建索引（添加IF NOT EXISTS）
+        self.create_indexes().await?;
 
         info!("数据库表初始化完成");
+        Ok(())
+    }
+
+    /// 封装表创建逻辑
+    async fn execute_table_creation(&self, table_name: &str, query: &str) -> Result<(), LedgerError> {
+        debug!("正在检查{}表...", table_name);
+        let pool = &*self.pool;
+
+        // 检查表是否存在
+        let exists: bool = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM sqlite_master 
+            WHERE type='table' AND name = ?"
+        )
+        .bind(table_name)
+        .fetch_one(pool)
+        .await
+        .map(|count| count > 0)
+        .unwrap_or(false);
+
+        if !exists {
+            debug!("正在创建{}表...", table_name);
+            sqlx::query(query)
+                .execute(pool)
+                .await
+                .map_err(|e| {
+                    error!("创建{}表失败: {}", table_name, e);
+                    LedgerError::DatabaseError(e)
+                })?;
+            debug!("{}表创建成功", table_name);
+        } else {
+            debug!("{}表已存在，跳过创建", table_name);
+        }
+        Ok(())
+    }
+
+    /// 封装索引创建逻辑
+    async fn create_indexes(&self) -> Result<(), LedgerError> {
+        debug!("正在创建索引...");
+        let pool = &*self.pool;
+
+        let indexes = [
+            ("idx_transactions_from", "CREATE INDEX IF NOT EXISTS idx_transactions_from ON transactions(from_address)"),
+            ("idx_transactions_to", "CREATE INDEX IF NOT EXISTS idx_transactions_to ON transactions(to_address)"),
+            ("idx_transactions_block", "CREATE INDEX IF NOT EXISTS idx_transactions_block ON transactions(block_hash)"),
+            ("idx_blocks_height", "CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height)"),
+            ("idx_blocks_parent", "CREATE INDEX IF NOT EXISTS idx_blocks_parent ON blocks(parent_hash)"),
+            ("idx_wallet_history_address", "CREATE INDEX IF NOT EXISTS idx_wallet_history_address ON wallet_transaction_history(wallet_address)"),
+            ("idx_merkle_roots_root_hash", "CREATE INDEX IF NOT EXISTS idx_merkle_roots_root_hash ON merkle_roots(root_hash)"),
+            ("idx_merkle_roots_block_hash", "CREATE INDEX IF NOT EXISTS idx_merkle_roots_block_hash ON merkle_roots(block_hash)"),
+            ("idx_merkle_proofs_transaction_hash", "CREATE INDEX IF NOT EXISTS idx_merkle_proofs_transaction_hash ON merkle_proofs(transaction_hash)"),
+            ("idx_merkle_proofs_root_hash", "CREATE INDEX IF NOT EXISTS idx_merkle_proofs_root_hash ON merkle_proofs(root_hash)")
+        ];
+
+        for (index_name, query) in indexes {
+            debug!("正在检查{}索引...", index_name);
+            let exists: bool = sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM sqlite_master 
+                WHERE type='index' AND name = ?"
+            )
+            .bind(index_name)
+            .fetch_one(pool)
+            .await
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+            if !exists {
+                debug!("正在创建{}...", index_name);
+                sqlx::query(query)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| {
+                        error!("创建{}失败: {}", index_name, e);
+                        LedgerError::DatabaseError(e)
+                    })?;
+            } else {
+                debug!("{}已存在，跳过创建", index_name);
+            }
+        }
         Ok(())
     }
 }
@@ -231,7 +264,7 @@ impl WalletOperations {
                     address: row.address,
                     balance: Amount::from_str(&row.balance)
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
-                    nonce: row.nonce as u64,
+                    nonce: row.nonce as i64,
                 }))
             }
             Ok(None) => {
@@ -402,6 +435,85 @@ impl WalletOperations {
         debug!("获取到 {} 笔交易历史", transactions.len());
         Ok(transactions)
     }
+
+    /// 原子性递增nonce
+    pub async fn increment_nonce(&self, address: &str) -> Result<i64, LedgerError> {
+        let pool = &*self.pool;
+
+        // 添加连接检查
+        if pool.is_closed() {
+            return Err(LedgerError::DatabaseError(sqlx::Error::PoolClosed));
+        }
+
+        let mut tx = pool.begin().await?;
+
+        // 先获取当前nonce
+        let current_nonce: i64 = sqlx::query_scalar(
+            "SELECT nonce FROM wallets WHERE address = ? FOR UPDATE",
+        )
+        .bind(address)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        // 原子性更新
+        let new_nonce = current_nonce + 1;
+        sqlx::query(
+            "UPDATE wallets SET nonce = ? WHERE address = ?",
+        )
+        .bind(new_nonce)
+        .bind(address)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+        Ok(new_nonce)
+    }
+
+    /// 获取账户当前nonce值
+    pub async fn get_account_nonce(&self, address: &str) -> Result<i64, LedgerError> {
+        debug!("正在获取账户nonce: {}", address);
+        let pool = &*self.pool;
+
+        let nonce = sqlx::query_scalar::<_, i64>(
+            "SELECT nonce FROM wallets WHERE address = ?",
+        )
+        .bind(address)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or(0); // 如果账户不存在，返回0
+
+        debug!("获取到账户nonce: {}", nonce);
+        Ok(nonce)
+    }
+
+    /// 安全更新nonce（带版本校验）
+    pub async fn safe_update_nonce(
+        &self,
+        address: &str,
+        expected_nonce: i64,
+        new_nonce: i64
+    ) -> Result<(), LedgerError> {
+        // 确保数据库已初始化
+        let pool = &*self.pool;
+
+        let result = sqlx::query(
+            "UPDATE wallets 
+            SET nonce = $1 
+            WHERE address = $2 AND nonce = $3"
+        )
+        .bind(new_nonce)
+        .bind(address)
+        .bind(expected_nonce)
+        .execute(pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            Err(LedgerError::NonceConflictError("nonce冲突".to_string()))
+        } else {
+            Ok(())
+        }
+    }
+
 }
 
 /// 交易数据库操作
@@ -410,9 +522,14 @@ pub struct TransactionOperations {
 }
 
 impl TransactionOperations {
+
+
+
     pub fn new(pool: Arc<SqlitePool>) -> Self {
         Self { pool }
     }
+
+
 
     /// 插入新的交易记录
     pub async fn insert_transaction(&self, transaction: Transaction) -> Result<(), LedgerError> {

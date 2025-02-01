@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Wallet {
     pub address: String,
     pub balance: Amount,
-    pub nonce: u64,
+    pub nonce: i64,
 }
 
 impl Wallet {
