@@ -1,6 +1,6 @@
 use super::error::LedgerError;
 use crate::crypto::hash::{to_hash, Hash};
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use log::{debug, error};
 use merkletree::hash::Algorithm;
 use merkletree::merkle::MerkleTree;
@@ -25,7 +25,7 @@ impl MerkleTreeManager {
     /// 从交易列表构建默克尔树
     pub async fn build_merkle_tree(
         &mut self,
-        transactions: &[Transaction],
+        transactions: &[TransactionDetail],
     ) -> Result<Hash, LedgerError> {
         debug!("正在构建默克尔树，交易数量: {}", transactions.len());
 
@@ -84,7 +84,7 @@ impl MerkleTreeManager {
     /// 生成交易的默克尔证明
     pub async fn generate_proof(
         &self,
-        transaction: &Transaction,
+        transaction: &TransactionDetail,
     ) -> Result<MerkleProof, LedgerError> {
         let tree = self
             .tree
@@ -143,7 +143,7 @@ impl MerkleTreeManager {
     /// 保存默克尔证明到数据库
     async fn save_merkle_proof(
         &self,
-        transaction: &Transaction,
+        transaction: &TransactionDetail,
         proof: &MerkleProof,
     ) -> Result<(), LedgerError> {
         debug!("正在保存默克尔证明到数据库");
@@ -176,7 +176,7 @@ impl MerkleTreeManager {
     /// 验证默克尔树根
     pub async fn verify_merkle_root(
         &mut self,
-        transactions: &[Transaction],
+        transactions: &[TransactionDetail],
         expected_root: &Hash,
     ) -> Result<bool, LedgerError> {
         // 构建交易哈希列表
@@ -210,20 +210,21 @@ impl MerkleTreeManager {
 pub struct MerkleProof {
     pub proof_hashes: Vec<Hash>,
     pub root_hash: Hash,
+
 }
 
 impl MerkleProof {
     /// 验证默克尔证明
     fn verify(&self, transaction_hash: &[u8]) -> Result<bool, String> {
         let mut current = Hash::from_slice(transaction_hash).map_err(|e| e.to_string())?;
-
+        
         for proof_hash in &self.proof_hashes {
             let combined = if current.as_ref() <= proof_hash.as_ref() {
                 [current.as_ref(), proof_hash.as_ref()].concat()
             } else {
                 [proof_hash.as_ref(), current.as_ref()].concat()
             };
-
+            
             // 修复类型不匹配问题
             let hash_bytes = to_hash(combined.as_slice().to_vec()).map_err(|e| e.to_string())?;
             current = Hash::from_slice(hash_bytes.as_ref()).map_err(|e| e.to_string())?;
@@ -231,4 +232,14 @@ impl MerkleProof {
 
         Ok(current == self.root_hash)
     }
+
 }
+
+
+
+
+
+
+
+
+

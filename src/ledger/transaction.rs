@@ -7,7 +7,7 @@ use crate::crypto::hash::Hash;
 use crate::crypto::signature::SignatureWrapper;
 use crate::types::amount::Amount;
 use crate::types::ledger::TransactionManagement;
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use log::{debug, error};
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -54,13 +54,13 @@ impl TransactionManager {
     }
 
     /// 获取待处理交易列表
-    pub async fn get_pending_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
+    pub async fn get_pending_transactions(&self) -> Result<Vec<TransactionDetail>, LedgerError> {
         debug!("正在获取待处理交易...");
         self.db_ops.get_pending_transactions().await
     }
 
     /// 获取已确认交易列表
-    pub async fn get_confirmed_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
+    pub async fn get_confirmed_transactions(&self) -> Result<Vec<TransactionDetail>, LedgerError> {
         debug!("正在获取已确认交易...");
         let pool = &*self.pool;
 
@@ -76,6 +76,9 @@ impl TransactionManager {
             signature: String,
             timestamp: i64,
             fee: String,
+            locked: bool,
+            unlocked_time: i64,
+            transaction_status: String,
         }
 
         // 查询已确认的交易
@@ -89,14 +92,14 @@ impl TransactionManager {
         let transactions = rows
             .into_iter()
             .map(|row| {
-                Ok(Transaction {
+                Ok(TransactionDetail {
                     transaction_type: serde_json::from_str(&row.transaction_type)?,
                     from: row.from_address,
                     to: row.to_address,
                     transfer_amount: Amount::from_str(&row.transfer_amount)
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
-                    nonce: row.nonce as u64,
-                    signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                    nonce: row.nonce as i64,
+                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
                         .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
                     timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
@@ -104,6 +107,10 @@ impl TransactionManager {
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
                     transaction_hash: to_hash(hex::decode(row.hash)?)
                         .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    locked: row.locked,
+                    unlocked_time: chrono::DateTime::from_timestamp(row.unlocked_time, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    transaction_status: row.transaction_status,
                 })
             })
             .collect::<Result<Vec<_>, LedgerError>>()?;
@@ -121,7 +128,7 @@ impl TransactionManager {
     /// 构建交易列表的默克尔树
     pub async fn build_transaction_merkle_tree(
         &mut self,
-        transactions: &[Transaction],
+        transactions: &[TransactionDetail],
     ) -> Result<Hash, LedgerError> {
         debug!(
             "TransactionManager 正在构建交易默克尔树，交易数量: {}",
@@ -131,7 +138,7 @@ impl TransactionManager {
     }
 
     /// 验证交易
-    pub async fn verify_transaction(&self, transaction: &Transaction) -> Result<bool, LedgerError> {
+    pub async fn verify_transaction(&self, transaction: &TransactionDetail) -> Result<bool, LedgerError> {
         debug!("正在验证交易: {:?}", transaction);
 
 
@@ -184,7 +191,7 @@ impl TransactionManager {
         let sender_address = &transaction.from;
 
         if !transaction
-            .signature
+            .initiator_signature
             .verify(&transaction_bytes, sender_address) //  使用 sender_address
             .map_err(|e| LedgerError::SignatureError(e))?
         {
@@ -197,7 +204,7 @@ impl TransactionManager {
     }
 
     // 验证地址格式和有效性
-    async fn verify_addresses(&self, transaction: &Transaction) -> Result<bool, LedgerError> {
+    async fn verify_addresses(&self, transaction: &TransactionDetail) -> Result<bool, LedgerError> {
         use crate::wallet::address::WalletAddress;
 
         // 1. 验证地址是否为空
@@ -235,7 +242,7 @@ impl TransactionManager {
     ///
     /// # 返回值
     /// * `Result<bool, LedgerError>` - 验证结果
-    async fn verify_nonce(&self, transaction: &Transaction) -> Result<bool, LedgerError> {
+    async fn verify_nonce(&self, transaction: &TransactionDetail) -> Result<bool, LedgerError> {
         let sender_address = &transaction.from;
         
         // 从数据库获取账户当前nonce

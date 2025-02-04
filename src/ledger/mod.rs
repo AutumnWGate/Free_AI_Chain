@@ -13,7 +13,7 @@ use self::transaction::TransactionManager;
 use self::wallet::WalletManager;
 use crate::types::block::Block;
 use crate::types::ledger::LedgerState;
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use crate::types::wallet::Wallet;
 use log::{debug, error, info};
 use sqlx::SqlitePool;
@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug)]
 pub enum LedgerEvent {
     WalletCreated(Wallet),
-    TransactionAdded(Transaction),
+    TransactionAdded(TransactionDetail),
     BlockCreated(Block),
     StateUpdated,
     Error(LedgerError),
@@ -224,7 +224,7 @@ impl LedgerManager {
     }
 
     /// 获取交易池中的交易
-    pub async fn get_pending_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
+    pub async fn get_pending_transactions(&self) -> Result<Vec<TransactionDetail>, LedgerError> {
         self.transaction_manager.get_pending_transactions().await
     }
 

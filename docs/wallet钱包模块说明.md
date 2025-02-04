@@ -1,3 +1,19 @@
+# 钱包模块说明
+
+## 开发要求
+1. ios、android移动端采用本地密钥管理，使用flutter_secure_storage插件。
+2. 加密存储的信息：
+    1. 助记词
+    2. 私钥
+    3. 密码
+    4. 节点连接信息 todo
+    5. API 密钥/访问令牌 (Sensitive API Keys / Access Tokens) todo
+    6. 其他敏感信息 todo
+3. 不加密存储的信息：
+    1. 地址
+    2. 公钥
+    3. nonce
+
 
 ## 注册要点：
 1. 用户输入密码，生成地址和私钥，同时生成助记词。
@@ -31,9 +47,6 @@
 | 1010101010 | 0xBC34EB12                    | FAIC    | Free AI Chain                     |
 
 
-
-## 本地缓存用户信息及办法：
-TODO，或见钱包应用端说明。
 
 ## 钱包模块结构
 src/

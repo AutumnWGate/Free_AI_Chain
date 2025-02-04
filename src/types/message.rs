@@ -2,7 +2,7 @@ use crate::crypto::hash::Hash;
 use crate::types::amount::Amount;
 use crate::types::block::Block;
 use crate::types::node::NodeInfo;
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use serde::{Deserialize, Serialize};
 
 /// 消息类型
@@ -22,7 +22,7 @@ pub enum Request {
         address: String,
     },
     SendTransaction {
-        transaction: Transaction,
+        transaction: TransactionDetail,
     },
     GetMerkleProof {
         transaction_hash: Hash,
@@ -35,6 +35,22 @@ pub enum Request {
         height: u64,
     },
     GetLatestBlock,
+
+    GetTransactionHistory {
+        address: String,
+        page: u32,
+        limit: u32,
+    },
+
+    SyncBlockchain {
+        from_height: u64,
+        to_height: u64,
+    },
+    
+    GetTransactionStatus {
+        transaction_hash: Hash,
+    },
+
 }
 
 /// 响应
@@ -48,4 +64,21 @@ pub enum Response {
     GetLatestBlockResponse { block: Block },
     GetBlockByHeightResponse { block: Block },
     Error { message: String },
+    GetTransactionStatusResponse {
+        status: String,
+    },
+    GetTransactionHistoryResponse {
+        transactions: Vec<TransactionDetail>,
+        total: u64,
+    },
+    GetPendingTransactionsResponse {
+        transactions: Vec<TransactionDetail>,
+    },
+    GetNodeListResponse {
+        nodes: Vec<NodeInfo>,
+    },
+    SyncBlockchainResponse {
+        blocks: Vec<Block>,
+    },
+
 }

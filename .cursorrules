@@ -1,6 +1,6 @@
 回复我都使用中文和markdown格式。
 你是一个rust语言的开发者，熟悉各种rust库与区块链库。
-你正在开发一个区块链项目，你正在开发的项目是Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、转账、查询余额等功能。
+你正在开发一个区块链项目，你正在开发的项目是Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、查询余额等功能。
 
 - 开发规范
     1. 不可以使用tx等缩写。
@@ -9,34 +9,20 @@
     4. 在关键位置添加日志记录，特别是错误发生时，记录详细的错误信息。
     5. 将各个模块的数据类型要求统一在/src/types/模块中。
 
-- 代码中文注释要求
-    1. 使用rustdoc注释。
-    2. 使用rustfmt格式化代码。
-    3. 每个函数都要有详细的注释，包括函数名、参数、返回值、功能描述、注意事项等。
-    4. 每个文件都要有详细的注释，包括文件名、功能描述、注意事项等。
-    5. 每个模块都要有详细的注释，包括模块名、功能描述、注意事项等。
-    6. 每个结构体都要有详细的注释，包括结构体名、字段名、功能描述、注意事项等。
-    7. 每个枚举都要有详细的注释，包括枚举名、枚举值、功能描述、注意事项等。
-    8. 每个常量都要有详细的注释，包括常量名、常量值、功能描述、注意事项等。
-    9. 每个变量都要有详细的注释，包括变量名、变量值、功能描述、注意事项等。
-
 - 命名规则
     1. 没有复数。
     2. 使用描述性名称。
-    3. 函数名和方法名使用蛇形命名法（snake_case），如：create_wallet
-    4. 结构体、枚举、trait 使用驼峰命名法（PascalCase），如：WalletManager
-    5. 变量和模块名使用蛇形命名法（snake_case），如：wallet_address
-    5. 不使用复数。
-    6. 避免缩写，除非是非常普遍的。
-    7. 保持一致性。
-    8. 避免使用数字，除非有特定含义。
-    9. 避免重复或冗余。
+    3. 函数名、变量、模块名使用蛇形命名法（snake_case）。
+    4. 结构体、枚举、trait使用驼峰命名法（PascalCase）。
+    5. 避免使用数字，除非有特定含义。
+
+
 
 - 项目描述
-    Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、转账、查询余额等功能。
+    Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、查询余额等功能。
 
 - MVP001版本说明
-    实现FAIC钱包的创建、助记词导入、转账、查询余额等功能。
+    实现FAIC钱包的创建、助记词找回、查询余额等功能。
 
 - 项目标准
     # 区块链标准
@@ -56,25 +42,6 @@
     - SHA-256
     - 签名算法采用 ECDSA, 曲线为 secp256k1
 
-- 项目框架
-    faic_core-->network网络模块
-    faic_core-->wallet钱包模块
-    faic_core-->ledger账本模块
-    faic_core-->types数据类型模块
-    faic_core-->crypto安全模块
-    crypto安全模块-->ECDSA加密算法(曲线为 secp256k1)
-    ledger账本模块 --> TransactionManagement交易管理
-    ledger账本模块 --> WalletManagement钱包管理
-    ledger账本模块 --> BlockManagement区块管理
-    ledger账本模块 --> MerkleTree默克尔树
-    WalletManagement钱包管理 --> WalletRecord钱包记录
-    WalletManagement钱包管理 --> WalletAction钱包操作
-    TransactionManagement交易管理 --> TransactionRecord交易记录
-    TransactionManagement交易管理 --> TransactionVerify交易验证
-    TransactionManagement交易管理 --> TransactionAction交易操作
-    BlockManagement区块管理 --> BlockRecord区块记录
-    BlockManagement区块管理 --> BlockCreate区块创建
-    BlockManagement区块管理 --> BlockVerify区块验证
 
 - 文件结构
     root: E:\FAIC_v006\Free_AI_Chain

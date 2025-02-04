@@ -1,5 +1,5 @@
 use crate::types::amount::Amount;
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use crate::wallet::address::WalletAddress;
 use crate::wallet::error::{KeyManagerError, WalletError};
 use crate::wallet::key_manager::KeyManager;
@@ -200,7 +200,7 @@ impl Wallet {
         db_pool: &SqlitePool,
         page: u32,
         page_size: u32,
-    ) -> Result<Vec<Transaction>, WalletError> {
+    ) -> Result<Vec<TransactionDetail>, WalletError> {
         use crate::ledger::db::operation::WalletOperations;
 
         let ops = WalletOperations::new(Arc::new(db_pool.clone()));

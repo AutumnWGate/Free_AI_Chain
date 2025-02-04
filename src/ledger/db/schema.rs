@@ -2,7 +2,7 @@ use crate::crypto::hash::Hash;
 use crate::crypto::signature::SignatureWrapper;
 use crate::types::amount::Amount;
 use crate::types::block::Block;
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use crate::types::transaction::TransactionType;
 use chrono::{DateTime, Utc};
 use hex;
@@ -34,8 +34,9 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletSchema {
     pub address: String,
-    pub balance: Amount,
     pub nonce: u64,
+    pub available_balance: Amount,
+    pub locked_balance: Amount,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,12 +46,14 @@ pub struct TransactionSchema {
     pub from: String,
     pub to: String,
     pub transfer_amount: Amount,
-    pub nonce: u64,
-    pub signature: SignatureWrapper,
+    pub locked: bool,
+    pub unlocked_time: i64,
+    pub nonce: i64,
+    pub initiator_signature: SignatureWrapper,
     pub timestamp: DateTime<Utc>,
     pub fee: Amount,
     pub block_hash: Option<Hash>,
-    pub status: TransactionStatus,
+    pub transaction_status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,15 +69,18 @@ pub struct BlockSchema {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionPoolSchema {
-    pub hash: Hash,
+    pub transaction_hash: Hash,
     pub transaction_type: TransactionType,
     pub from_address: String,
     pub to_address: String,
     pub transfer_amount: Amount,
-    pub nonce: u64,
-    pub signature: SignatureWrapper,
+    pub locked: bool,
+    pub unlocked_time: i64,
+    pub nonce: i64,
+    pub initiator_signature: SignatureWrapper,
     pub timestamp: DateTime<Utc>,
     pub fee: Amount,
+    pub transaction_status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,33 +114,38 @@ pub enum TransactionStatus {
 impl From<TransactionSchema> for TransactionPoolSchema {
     fn from(transaction: TransactionSchema) -> Self {
         Self {
-            hash: transaction.transaction_hash,
+            transaction_hash: transaction.transaction_hash,
             transaction_type: transaction.transaction_type,
             from_address: transaction.from,
             to_address: transaction.to,
             transfer_amount: transaction.transfer_amount,
+            locked: transaction.locked,
+            unlocked_time: transaction.unlocked_time,
             nonce: transaction.nonce,
-            signature: transaction.signature,
+            initiator_signature: transaction.initiator_signature,
             timestamp: transaction.timestamp,
             fee: transaction.fee,
+            transaction_status: transaction.transaction_status,
         }
     }
 }
 
-impl From<Transaction> for TransactionSchema {
-    fn from(transaction: Transaction) -> Self {
+impl From<TransactionDetail> for TransactionSchema {
+    fn from(transaction: TransactionDetail) -> Self {
         Self {
             transaction_hash: transaction.transaction_hash,
             transaction_type: transaction.transaction_type,
             from: transaction.from,
             to: transaction.to,
             transfer_amount: transaction.transfer_amount,
+            locked: transaction.locked,
+            unlocked_time: transaction.unlocked_time.timestamp(),
             nonce: transaction.nonce,
-            signature: transaction.signature,
+            initiator_signature: transaction.initiator_signature,
             timestamp: transaction.timestamp,
             fee: transaction.fee,
             block_hash: None,
-            status: TransactionStatus::Pending,
+            transaction_status: transaction.transaction_status,
         }
     }
 }

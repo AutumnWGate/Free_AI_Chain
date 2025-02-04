@@ -10,7 +10,7 @@ mod.rs:
 address.rs:
     定义 Address 结构体，用于表示钱包地址。
     实现 Address 的相关方法，例如：
-        new(): 生成一个新的地址。
+        new_address(): 生成一个新的地址。
         to_string(): 将地址转换为字符串表示。
         from_string(): 从字符串表示创建地址。
     地址应当符合BIP32、BIP39、BIP44、BIP47、BIP84标准。

@@ -3,7 +3,7 @@ use crate::crypto::hash::to_hash;
 use crate::crypto::signature::SignatureWrapper;
 use crate::types::amount::Amount;
 use crate::types::block::{Block, BlockHeader};
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use crate::types::wallet::Wallet;
 use log::{debug, error, info};
 use sqlx::sqlite::SqlitePool;
@@ -58,7 +58,7 @@ impl DatabaseManager {
                 timestamp INTEGER NOT NULL,
                 fee TEXT NOT NULL,
                 block_hash TEXT,
-                status TEXT NOT NULL,
+                transaction_status TEXT NOT NULL,
                 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
             )",
@@ -72,6 +72,16 @@ impl DatabaseManager {
                 wallet_address TEXT NOT NULL,
                 transaction_hash TEXT NOT NULL,
                 timestamp INTEGER NOT NULL,
+                transaction_status TEXT NOT NULL,
+                locked INTEGER NOT NULL,
+                unlocked_time INTEGER NOT NULL,
+                nonce INTEGER NOT NULL,
+                transaction_type TEXT NOT NULL,
+                from_address TEXT NOT NULL,
+                to_address TEXT NOT NULL,
+                transfer_amount TEXT NOT NULL,
+                fee TEXT NOT NULL,
+                block_hash TEXT,
                 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                 PRIMARY KEY (wallet_address, transaction_hash),
                 FOREIGN KEY (wallet_address) REFERENCES wallets(address),
@@ -327,7 +337,7 @@ impl WalletOperations {
     pub async fn update_transaction_history(
         &self,
         address: &str,
-        transactions: &[Transaction],
+        transactions: &[TransactionDetail],
     ) -> Result<(), LedgerError> {
         debug!("正在更新钱包交易历史: {}", address);
         let pool = &*self.pool;
@@ -361,7 +371,7 @@ impl WalletOperations {
     pub async fn get_transaction_history(
         &self,
         address: &str,
-    ) -> Result<Vec<Transaction>, LedgerError> {
+    ) -> Result<Vec<TransactionDetail>, LedgerError> {
         self.get_transaction_history_paged(address, 0, u32::MAX)
             .await
     }
@@ -372,7 +382,7 @@ impl WalletOperations {
         address: &str,
         offset: u32,
         limit: u32,
-    ) -> Result<Vec<Transaction>, LedgerError> {
+    ) -> Result<Vec<TransactionDetail>, LedgerError> {
         debug!(
             "正在获取分页交易历史: {} offset={} limit={}",
             address, offset, limit
@@ -388,11 +398,13 @@ impl WalletOperations {
             to_address: String,
             transfer_amount: String,
             nonce: i64,
-            signature: String,
+            initiator_signature: String,
             timestamp: i64,
             fee: String,
             block_hash: Option<String>,
-            status: String,
+            transaction_status: String,
+            locked: bool,
+            unlocked_time: i64,
         }
 
         // 执行查询
@@ -413,14 +425,17 @@ impl WalletOperations {
         let transactions = rows
             .into_iter()
             .map(|row| {
-                Ok(Transaction {
+                Ok(TransactionDetail {
                     transaction_type: serde_json::from_str(&row.transaction_type)?,
                     from: row.from_address,
                     to: row.to_address,
                     transfer_amount: Amount::from_str(&row.transfer_amount)
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
-                    nonce: row.nonce as u64,
-                    signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                    nonce: row.nonce as i64,
+                    locked: row.locked,
+                    unlocked_time: chrono::DateTime::from_timestamp(row.unlocked_time, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(row.initiator_signature)?)
                         .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
                     timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
@@ -428,6 +443,7 @@ impl WalletOperations {
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
                     transaction_hash: to_hash(hex::decode(row.hash)?)
                         .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    transaction_status: row.transaction_status,
                 })
             })
             .collect::<Result<Vec<_>, LedgerError>>()?;
@@ -532,7 +548,7 @@ impl TransactionOperations {
 
 
     /// 插入新的交易记录
-    pub async fn insert_transaction(&self, transaction: Transaction) -> Result<(), LedgerError> {
+    pub async fn insert_transaction(&self, transaction: TransactionDetail) -> Result<(), LedgerError> {
         debug!("正在插入交易记录: {:?}", transaction.transaction_hash);
         let pool = &*self.pool;
 
@@ -548,7 +564,7 @@ impl TransactionOperations {
         .bind(&transaction.to)
         .bind(&transaction.transfer_amount.to_string())
         .bind(transaction.nonce as i64)
-        .bind(&hex::encode(&transaction.signature))
+        .bind(&hex::encode(&transaction.initiator_signature))
         .bind(transaction.timestamp.timestamp())
         .bind(&transaction.fee.to_string())
         .bind("") // 初始区块哈希为空
@@ -561,7 +577,7 @@ impl TransactionOperations {
     }
 
     /// 获取待处理的交易列表
-    pub async fn get_pending_transactions(&self) -> Result<Vec<Transaction>, LedgerError> {
+    pub async fn get_pending_transactions(&self) -> Result<Vec<TransactionDetail>, LedgerError> {
         debug!("正在获取待处理交易");
         let pool = &*self.pool;
 
@@ -573,11 +589,13 @@ impl TransactionOperations {
             to_address: String,
             transfer_amount: String,
             nonce: i64,
-            signature: String,
+            initiator_signature: String,
             timestamp: i64,
             fee: String,
             block_hash: Option<String>,
-            status: String,
+            transaction_status: String,
+            locked: bool,
+            unlocked_time: i64,
         }
 
         let rows = sqlx::query_as::<_, TransactionRow>(
@@ -589,14 +607,17 @@ impl TransactionOperations {
         let transactions = rows
             .into_iter()
             .map(|row| {
-                Ok(Transaction {
+                Ok(TransactionDetail {
                     transaction_type: serde_json::from_str(&row.transaction_type)?,
                     from: row.from_address,
                     to: row.to_address,
                     transfer_amount: Amount::from_str(&row.transfer_amount)
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
-                    nonce: row.nonce as u64,
-                    signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                    nonce: row.nonce as i64,
+                    locked: row.locked,
+                    unlocked_time: chrono::DateTime::from_timestamp(row.unlocked_time, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(row.initiator_signature)?)
                         .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
                     timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
@@ -604,6 +625,7 @@ impl TransactionOperations {
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
                     transaction_hash: to_hash(hex::decode(row.hash)?)
                         .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    transaction_status: row.transaction_status,
                 })
             })
             .collect::<Result<Vec<_>, LedgerError>>()?;
@@ -669,7 +691,7 @@ impl BlockOperations {
     async fn load_block_transactions(
         &self,
         block_hash: &str,
-    ) -> Result<Vec<Transaction>, LedgerError> {
+    ) -> Result<Vec<TransactionDetail>, LedgerError> {
         debug!("正在加载区块交易: {}", block_hash);
         let pool = &*self.pool;
 
@@ -681,11 +703,13 @@ impl BlockOperations {
             to_address: String,
             transfer_amount: String,
             nonce: i64,
-            signature: String,
+            initiator_signature: String,
             timestamp: i64,
             fee: String,
             block_hash: Option<String>,
-            status: String,
+            transaction_status: String,
+            locked: bool,
+            unlocked_time: i64,
         }
 
         let rows =
@@ -697,14 +721,17 @@ impl BlockOperations {
         let transactions = rows
             .into_iter()
             .map(|row| {
-                Ok(Transaction {
+                Ok(TransactionDetail {
                     transaction_type: serde_json::from_str(&row.transaction_type)?,
                     from: row.from_address,
                     to: row.to_address,
                     transfer_amount: Amount::from_str(&row.transfer_amount)
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
-                    nonce: row.nonce as u64,
-                    signature: SignatureWrapper::from_bytes(&hex::decode(row.signature)?)
+                    nonce: row.nonce as i64,
+                    locked: row.locked,
+                    unlocked_time: chrono::DateTime::from_timestamp(row.unlocked_time, 0)
+                        .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
+                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(row.initiator_signature)?)
                         .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
                     timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
@@ -712,6 +739,7 @@ impl BlockOperations {
                         .map_err(|e| LedgerError::AmountError(e.to_string()))?,
                     transaction_hash: to_hash(hex::decode(row.hash)?)
                         .map_err(|e| LedgerError::InvalidData(e.to_string()))?,
+                    transaction_status: row.transaction_status,
                 })
             })
             .collect::<Result<Vec<_>, LedgerError>>()?;
@@ -751,7 +779,7 @@ impl BlockOperations {
                     .bind(&block_transaction.to)
                     .bind(&block_transaction.transfer_amount.to_string())
                     .bind(block_transaction.nonce as i64)
-                    .bind(&hex::encode(&block_transaction.signature))
+                    .bind(&hex::encode(&block_transaction.initiator_signature))
                     .bind(block_transaction.timestamp.timestamp())
                     .bind(&block_transaction.fee.to_string())
                     .bind(&hex::encode(&block.header.block_hash))

@@ -20,6 +20,7 @@ pub enum TransactionError {
     SignatureError(String),
     #[error("哈希错误: {0}")]
     HashError(#[from] crate::crypto::hash::HashError),
+
 }
 
 // 交易类型
@@ -27,43 +28,66 @@ pub enum TransactionError {
 pub enum TransactionType {
     Transfer, // 转账
     SmartContract, // 智能合约
+    Dapp, // dapp
+    EarlyDonate, // 早期捐赠
               // 其他交易类型...
 }
 
-// 交易结构体
+// 交易状态
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Transaction {
+pub enum TransactionStatus {
+    AwaitVerify, // 等待验证
+    Confirmed, // 已确认
+    Pending, // 挂起等待人工处理
+    Processing, // 处理中
+    Rejected, // 已拒绝
+    Expired, // 已过期
+    Unknown, // 未知
+}
+
+// 交易信息结构体
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransactionDetail {
     pub transaction_type: TransactionType,
     pub from: String,
     pub to: String,
     pub transfer_amount: Amount,
-    pub nonce: u64,
-    pub signature: SignatureWrapper,
+    pub locked: bool,
+    pub unlocked_time: DateTime<Utc>,
+    pub nonce: i64,
     pub timestamp: DateTime<Utc>,
     pub fee: Amount,
     pub transaction_hash: Hash,
+    pub transaction_status: String,
+    pub initiator_signature: SignatureWrapper,
 }
 
-impl Transaction {
+impl TransactionDetail {
     /// 创建新交易
     pub fn new(
         transaction_type: TransactionType,
         from: String,
         to: String,
         transfer_amount: Amount,
-        nonce: u64,
+        locked: bool,
+        unlocked_time: DateTime<Utc>,
+        nonce: i64,
         fee: Amount,
+        initiator_signature: SignatureWrapper,
     ) -> Self {
-        let mut transaction = Transaction {
+        let mut transaction = TransactionDetail {
             transaction_type,
             from,
             to,
             transfer_amount,
+            locked,
+            unlocked_time,
             nonce,
-            signature: SignatureWrapper::from_bytes(&[0u8; 65]).expect("默认签名应该总是有效的"),
+            initiator_signature,
             timestamp: Utc::now(),
             fee,
             transaction_hash: Hash::new(),
+            transaction_status: TransactionStatus::AwaitVerify.to_string(),
         };
 
         // 计算交易哈希
@@ -73,6 +97,7 @@ impl Transaction {
 
         transaction
     }
+
 
     /// 将交易序列化为字节数组
     pub fn to_bytes(&self) -> Result<Vec<u8>, TransactionError> {
@@ -92,72 +117,56 @@ impl Transaction {
         Ok(())
     }
 
-    /// 验证交易签名
-    pub fn verify_signature(&self) -> Result<bool, TransactionError> {
-        debug!("正在验证交易签名");
-
-        // 1. 获取待签名数据
-        let message = self.get_signing_message()?;
-
-        // 2. 验证签名
-        let is_valid = self
-            .signature
-            .verify(&message, &self.from)
-            .map_err(|e| TransactionError::SignatureError(format!("签名验证失败: {}", e)))?;
-
-        debug!("交易签名验证{}", if is_valid { "通过" } else { "失败" });
-        Ok(is_valid)
-    }
-
-    /// 获取待签名的消息
-    fn get_signing_message(&self) -> Result<Vec<u8>, TransactionError> {
-        // 不包含签名和哈希的交易数据
-        let unsigned_tx = Transaction {
-            transaction_type: self.transaction_type.clone(),
-            from: self.from.clone(),
-            to: self.to.clone(),
-            transfer_amount: self.transfer_amount.clone(), // 添加 .clone()
-            nonce: self.nonce,
-            signature: SignatureWrapper::from_bytes(&[0u8; 65]).expect("默认签名应该总是有效的"),
-            timestamp: self.timestamp,
-            fee: self.fee.clone(), // 添加 .clone()
-            transaction_hash: Hash::new(),
-        };
-
-        unsigned_tx.to_bytes()
-    }
 }
 
-impl Default for Transaction {
+impl Default for TransactionDetail {
     fn default() -> Self {
-        Transaction {
+        TransactionDetail {
             transaction_type: TransactionType::Transfer,
             from: String::new(),
             to: String::new(),
             transfer_amount: Amount::default(),
             nonce: 0,
-            signature: SignatureWrapper::from_bytes(&[0u8; 65]).expect("默认签名应该总是有效的"), // 这里使用 expect 因为我们知道这是一个有效的默认值
+            initiator_signature: SignatureWrapper::from_bytes(&[0u8; 65])
+                .expect("Default signature should be valid"),
             timestamp: Utc::now(),
             fee: Amount::default(),
             transaction_hash: Hash::new(),
+            transaction_status: TransactionStatus::AwaitVerify.to_string(),
+            locked: false,
+            unlocked_time: Utc::now(),
         }
     }
 }
 
-impl PartialOrd for Transaction {
+impl std::fmt::Display for TransactionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransactionStatus::AwaitVerify => write!(f, "AwaitVerify"),
+            TransactionStatus::Confirmed => write!(f, "Confirmed"),
+            TransactionStatus::Pending => write!(f, "Pending"),
+            TransactionStatus::Processing => write!(f, "Processing"),
+            TransactionStatus::Rejected => write!(f, "Rejected"),
+            TransactionStatus::Expired => write!(f, "Expired"),
+            TransactionStatus::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
+impl PartialOrd for TransactionDetail {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Transaction {
+impl Ord for TransactionDetail {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.transaction_hash.cmp(&other.transaction_hash)
     }
 }
 
 // 实现 AsRef<[u8]> trait
-impl AsRef<[u8]> for Transaction {
+impl AsRef<[u8]> for TransactionDetail {
     fn as_ref(&self) -> &[u8] {
         BUFFER.with(|buffer| {
             let mut buf = buffer.borrow_mut();
@@ -168,9 +177,9 @@ impl AsRef<[u8]> for Transaction {
     }
 }
 
-impl Element for Transaction {
+impl Element for TransactionDetail {
     fn byte_len() -> usize {
-        let sample = Transaction::default();
+        let sample = TransactionDetail::default();
         serde_json::to_vec(&sample).unwrap_or_default().len()
     }
 
@@ -192,7 +201,7 @@ impl Element for Transaction {
 }
 
 // 计算交易哈希的函数
-pub fn calculate_transaction_hash(transaction: &Transaction) -> Result<Hash, TransactionError> {
+pub fn calculate_transaction_hash(transaction: &TransactionDetail) -> Result<Hash, TransactionError> {
     let type_bytes = serde_json::to_vec(&transaction.transaction_type)
         .map_err(TransactionError::SerializationError)?;
 
@@ -202,9 +211,11 @@ pub fn calculate_transaction_hash(transaction: &Transaction) -> Result<Hash, Tra
         transaction.to.as_bytes(),
         &transaction.transfer_amount.to_bytes_be(),
         &transaction.nonce.to_be_bytes(),
-        &transaction.signature.to_bytes().as_ref(),
         transaction.timestamp.to_rfc3339().as_bytes(),
         &transaction.fee.to_bytes_be(),
+        &transaction.transaction_status.as_bytes(),
+        &[transaction.locked as u8], 
+        &transaction.unlocked_time.to_rfc3339().as_bytes(),   
     ])
     .map_err(TransactionError::HashError)
 }
@@ -212,7 +223,7 @@ pub fn calculate_transaction_hash(transaction: &Transaction) -> Result<Hash, Tra
 // 交易池
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransactionPool {
-    pub transactions: Vec<Transaction>,
+    pub transactions: Vec<TransactionDetail>,
 }
 
 impl TransactionPool {
@@ -222,7 +233,7 @@ impl TransactionPool {
         }
     }
 
-    pub fn add_transaction(&mut self, transaction: Transaction) {
+    pub fn add_transaction(&mut self, transaction: TransactionDetail) {
         self.transactions.push(transaction);
     }
 
@@ -231,7 +242,7 @@ impl TransactionPool {
             .retain(|transaction| &transaction.transaction_hash != transaction_hash);
     }
 
-    pub fn get_transactions_for_block(&self, max_transactions: usize) -> Vec<Transaction> {
+    pub fn get_transactions_for_block(&self, max_transactions: usize) -> Vec<TransactionDetail> {
         // TODO: 根据交易费用或其他策略选择交易
         self.transactions
             .iter()

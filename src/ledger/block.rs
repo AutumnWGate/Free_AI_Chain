@@ -5,7 +5,7 @@ use crate::crypto::hash::Hash;
 use crate::crypto::signature::SignatureWrapper;
 use crate::types::block::{calculate_block_hash, Block, BlockHeader};
 use crate::types::ledger::BlockManagement;
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use log::{debug, error};
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -31,7 +31,7 @@ impl BlockManager {
     }
 
     // 添加新方法：创建区块时构建默克尔树
-    pub async fn create_block(&self, transactions: &[Transaction]) -> Result<Block, LedgerError> {
+    pub async fn create_block(&self, transactions: &[TransactionDetail]) -> Result<Block, LedgerError> {
         debug!("正在创建新区块，交易数量: {}", transactions.len());
 
         // 获取最新区块信息

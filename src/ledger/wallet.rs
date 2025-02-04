@@ -2,7 +2,7 @@ use super::db::operation::WalletOperations;
 use super::error::LedgerError;
 use crate::types::amount::Amount;
 use crate::types::ledger::{WalletAction, WalletManagement};
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use crate::types::wallet::Wallet;
 use log::{debug, error, info};
 use sqlx::SqlitePool;
@@ -85,7 +85,7 @@ impl WalletManager {
     pub async fn get_transaction_history(
         &self,
         address: &str,
-    ) -> Result<Vec<Transaction>, LedgerError> {
+    ) -> Result<Vec<TransactionDetail>, LedgerError> {
         debug!("正在获取钱包交易历史: {}", address);
         self.db_ops.get_transaction_history(address).await
     }

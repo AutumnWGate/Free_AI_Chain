@@ -1,6 +1,6 @@
 use crate::crypto::hash::{sha256_concat, Hash};
 use crate::crypto::signature::SignatureWrapper;
-use crate::types::transaction::Transaction;
+use crate::types::transaction::TransactionDetail;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -29,7 +29,7 @@ pub struct BlockHeader {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
-    pub transactions: Vec<Transaction>,
+    pub transactions: Vec<TransactionDetail>,
 }
 
 impl Default for BlockHeader {

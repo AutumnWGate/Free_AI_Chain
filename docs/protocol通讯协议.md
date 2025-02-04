@@ -9,7 +9,8 @@
 *   **`types`**: 定义了基本的数据类型，如 `node`、`message`、`amount` 、`transaction`、``。
 *   **`error`**: 定义了错误类型。
 *   **`config`**: 定义了网络配置。
-*   **`ledger`**: **定义了账本相关的数据结构和接口，包括 `Transaction`、`AccountState`、`Block`、`Storage` 等。**
+*   **`ledger`**: **定义了账本相关的数据结构和接口，包括 `TransactionDetail`、`AccountState`、`Block`、`Storage` 等。**
+
 
 ## 3. 消息定义
 ### 3.1. MessageType
@@ -24,7 +25,7 @@
 *   `GetBalance`: 查询余额，参数为钱包地址。
     *   `address`: 要查询的钱包地址，String 类型，需要符合 BIP32、BIP39、BIP44、BIP47 和 BIP84 标准。
 *   `SendTransaction`: 发送交易，参数为交易内容。
-    *   `transaction`: 要发送的交易，类型为 `Transaction`。
+    *   `transaction`: 要发送的交易，类型为 `TransactionDetail`。
 *   `GetNodeInfo`: 获取节点信息。
 *   `GetMerkleProof`: 获取 Merkle Proof，参数为区块哈希和交易哈希。
     *   `block_hash`: 要获取的区块哈希，String 类型。
@@ -58,9 +59,11 @@
 ### 3.5. NodeInfo
 节点信息 用于表示一个节点的信息，包含以下字段：
 *   `peer_id`: 节点的 PeerId，使用 crate::network::config::serde_peer_id 进行序列化和反序列化。
-*   `addresses`: 节点的地址列表，Vec<Multiaddr> 类型。
+*   `address`: 节点的地址列表，Vec<Multiaddr> 类型。
 *   `is_online`: 节点是否在线，bool 类型。
-*   `node_version`: 节点版本，String 类型。
+*   `peer_version`: 节点版本，String 类型。
+*   `node_manager_wallet_address`: 节点管理者钱包地址，String 类型。
+
 
 ### 3.6. Amount 
 构建在/src/types/mod.rs 中。
