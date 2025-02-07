@@ -12,7 +12,6 @@ use log::{debug, error};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
-
 /// 交易管理器
 pub struct TransactionManager {
     db_ops: TransactionOperations,
@@ -23,8 +22,6 @@ pub struct TransactionManager {
 }
 
 impl TransactionManager {
-
-
     /// 创建新的交易管理器实例
     pub async fn new(pool: Arc<SqlitePool>) -> Result<Self, LedgerError> {
         let db_ops = TransactionOperations::new(pool.clone());
@@ -138,11 +135,12 @@ impl TransactionManager {
     }
 
     /// 验证交易
-    pub async fn verify_transaction(&self, transaction: &TransactionDetail) -> Result<bool, LedgerError> {
+    pub async fn verify_transaction(
+        &self,
+        transaction: &TransactionDetail,
+    ) -> Result<bool, LedgerError> {
         debug!("正在验证交易: {:?}", transaction);
 
-
-        
         // 验证地址
         if !self.verify_addresses(transaction).await? {
             return Ok(false);
@@ -166,10 +164,10 @@ impl TransactionManager {
                 return Ok(false);
             }
         };
-        
+
         if sender_balance < total_amount {
             error!(
-                "余额不足: 余额={}, 需要={}", 
+                "余额不足: 余额={}, 需要={}",
                 sender_balance.to_string(),
                 total_amount.to_string()
             );
@@ -180,7 +178,6 @@ impl TransactionManager {
         if !self.verify_nonce(transaction).await? {
             return Ok(false);
         }
-
 
         //  签名验证
         debug!("开始签名验证...");
@@ -214,9 +211,13 @@ impl TransactionManager {
         }
 
         // 2. 验证地址格式
-        if !WalletAddress::validate_address(&transaction.from) || 
-        !WalletAddress::validate_address(&transaction.to) {
-            error!("地址格式无效: from={}, to={}", transaction.from, transaction.to);
+        if !WalletAddress::validate_address(&transaction.from)
+            || !WalletAddress::validate_address(&transaction.to)
+        {
+            error!(
+                "地址格式无效: from={}, to={}",
+                transaction.from, transaction.to
+            );
             return Ok(false);
         }
 
@@ -233,10 +234,10 @@ impl TransactionManager {
         }
 
         Ok(true)
-    }    
+    }
 
-        /// 验证交易的nonce
-    /// 
+    /// 验证交易的nonce
+    ///
     /// # 参数
     /// * `transaction` - 待验证的交易
     ///
@@ -244,22 +245,20 @@ impl TransactionManager {
     /// * `Result<bool, LedgerError>` - 验证结果
     async fn verify_nonce(&self, transaction: &TransactionDetail) -> Result<bool, LedgerError> {
         let sender_address = &transaction.from;
-        
+
         // 从数据库获取账户当前nonce
-        let current_nonce = self.wallet_ops
-            .get_account_nonce(sender_address)
-            .await?;
-            
+        let current_nonce = self.wallet_ops.get_account_nonce(sender_address).await?;
+
         // nonce必须等于当前nonce + 1
         if transaction.nonce as i64 != current_nonce + 1 {
             error!(
-                "无效的nonce值: 期望 {}, 实际 {}", 
+                "无效的nonce值: 期望 {}, 实际 {}",
                 current_nonce + 1,
                 transaction.nonce
             );
             return Ok(false);
         }
-        
+
         debug!("nonce验证通过: {}", transaction.nonce);
         Ok(true)
     }

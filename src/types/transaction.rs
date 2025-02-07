@@ -20,29 +20,28 @@ pub enum TransactionError {
     SignatureError(String),
     #[error("哈希错误: {0}")]
     HashError(#[from] crate::crypto::hash::HashError),
-
 }
 
 // 交易类型
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionType {
-    Transfer, // 转账
+    Transfer,      // 转账
     SmartContract, // 智能合约
-    Dapp, // dapp
-    EarlyDonate, // 早期捐赠
-              // 其他交易类型...
+    Dapp,          // dapp
+    Mint,   // 铸造
+                   // 其他交易类型...
 }
 
 // 交易状态
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionStatus {
     AwaitVerify, // 等待验证
-    Confirmed, // 已确认
-    Pending, // 挂起等待人工处理
-    Processing, // 处理中
-    Rejected, // 已拒绝
-    Expired, // 已过期
-    Unknown, // 未知
+    Confirmed,   // 已确认
+    Pending,     // 挂起等待人工处理
+    Processing,  // 处理中
+    Rejected,    // 已拒绝
+    Expired,     // 已过期
+    Unknown,     // 未知
 }
 
 // 交易信息结构体
@@ -98,7 +97,6 @@ impl TransactionDetail {
         transaction
     }
 
-
     /// 将交易序列化为字节数组
     pub fn to_bytes(&self) -> Result<Vec<u8>, TransactionError> {
         serde_json::to_vec(self).map_err(TransactionError::SerializationError)
@@ -116,7 +114,6 @@ impl TransactionDetail {
         debug!("交易哈希计算完成: {:?}", self.transaction_hash);
         Ok(())
     }
-
 }
 
 impl Default for TransactionDetail {
@@ -201,7 +198,9 @@ impl Element for TransactionDetail {
 }
 
 // 计算交易哈希的函数
-pub fn calculate_transaction_hash(transaction: &TransactionDetail) -> Result<Hash, TransactionError> {
+pub fn calculate_transaction_hash(
+    transaction: &TransactionDetail,
+) -> Result<Hash, TransactionError> {
     let type_bytes = serde_json::to_vec(&transaction.transaction_type)
         .map_err(TransactionError::SerializationError)?;
 
@@ -214,8 +213,8 @@ pub fn calculate_transaction_hash(transaction: &TransactionDetail) -> Result<Has
         transaction.timestamp.to_rfc3339().as_bytes(),
         &transaction.fee.to_bytes_be(),
         &transaction.transaction_status.as_bytes(),
-        &[transaction.locked as u8], 
-        &transaction.unlocked_time.to_rfc3339().as_bytes(),   
+        &[transaction.locked as u8],
+        &transaction.unlocked_time.to_rfc3339().as_bytes(),
     ])
     .map_err(TransactionError::HashError)
 }

@@ -31,7 +31,10 @@ impl BlockManager {
     }
 
     // 添加新方法：创建区块时构建默克尔树
-    pub async fn create_block(&self, transactions: &[TransactionDetail]) -> Result<Block, LedgerError> {
+    pub async fn create_block(
+        &self,
+        transactions: &[TransactionDetail],
+    ) -> Result<Block, LedgerError> {
         debug!("正在创建新区块，交易数量: {}", transactions.len());
 
         // 获取最新区块信息

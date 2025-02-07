@@ -43,3 +43,5 @@ impl std::fmt::Display for MerkleTreeError {
         }
     }
 }
+
+impl std::error::Error for MerkleTreeError {}

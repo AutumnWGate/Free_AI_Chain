@@ -4,6 +4,8 @@ pub mod error;
 pub mod merkletree;
 pub mod transaction;
 pub mod wallet;
+pub mod validator;
+pub mod minting;
 
 use self::block::BlockManager;
 use self::db::operation::DatabaseManager;
@@ -86,8 +88,6 @@ impl LedgerManager {
 
         let merkle_manager = Arc::new(Mutex::new(MerkleTreeManager::new(pool.clone())));
         let block_manager = BlockManager::new(pool.clone(), merkle_manager.clone())?;
-
- 
 
         let (sender, receiver) = channel();
         let event_receiver = Arc::new(Mutex::new(receiver));

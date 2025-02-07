@@ -35,7 +35,7 @@ impl DatabaseManager {
                 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                 updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
             )
-            "#
+            "#,
         )
         .execute(pool)
         .await
@@ -48,7 +48,7 @@ impl DatabaseManager {
         self.execute_table_creation(
             "transactions",
             "CREATE TABLE IF NOT EXISTS transactions (
-                hash TEXT PRIMARY KEY,
+                transaction_hash TEXT PRIMARY KEY,
                 transaction_type TEXT NOT NULL,
                 from_address TEXT NOT NULL,
                 to_address TEXT NOT NULL,
@@ -140,14 +140,18 @@ impl DatabaseManager {
     }
 
     /// 封装表创建逻辑
-    async fn execute_table_creation(&self, table_name: &str, query: &str) -> Result<(), LedgerError> {
+    async fn execute_table_creation(
+        &self,
+        table_name: &str,
+        query: &str,
+    ) -> Result<(), LedgerError> {
         debug!("正在检查{}表...", table_name);
         let pool = &*self.pool;
 
         // 检查表是否存在
         let exists: bool = sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM sqlite_master 
-            WHERE type='table' AND name = ?"
+            WHERE type='table' AND name = ?",
         )
         .bind(table_name)
         .fetch_one(pool)
@@ -157,13 +161,10 @@ impl DatabaseManager {
 
         if !exists {
             debug!("正在创建{}表...", table_name);
-            sqlx::query(query)
-                .execute(pool)
-                .await
-                .map_err(|e| {
-                    error!("创建{}表失败: {}", table_name, e);
-                    LedgerError::DatabaseError(e)
-                })?;
+            sqlx::query(query).execute(pool).await.map_err(|e| {
+                error!("创建{}表失败: {}", table_name, e);
+                LedgerError::DatabaseError(e)
+            })?;
             debug!("{}表创建成功", table_name);
         } else {
             debug!("{}表已存在，跳过创建", table_name);
@@ -193,7 +194,7 @@ impl DatabaseManager {
             debug!("正在检查{}索引...", index_name);
             let exists: bool = sqlx::query_scalar::<_, i64>(
                 "SELECT count(*) FROM sqlite_master 
-                WHERE type='index' AND name = ?"
+                WHERE type='index' AND name = ?",
             )
             .bind(index_name)
             .fetch_one(pool)
@@ -203,13 +204,10 @@ impl DatabaseManager {
 
             if !exists {
                 debug!("正在创建{}...", index_name);
-                sqlx::query(query)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| {
-                        error!("创建{}失败: {}", index_name, e);
-                        LedgerError::DatabaseError(e)
-                    })?;
+                sqlx::query(query).execute(pool).await.map_err(|e| {
+                    error!("创建{}失败: {}", index_name, e);
+                    LedgerError::DatabaseError(e)
+                })?;
             } else {
                 debug!("{}已存在，跳过创建", index_name);
             }
@@ -235,7 +233,7 @@ impl WalletOperations {
         match sqlx::query("INSERT INTO wallets (address, balance, nonce) VALUES ($1, $2, $3)")
             .bind(&wallet.address)
             .bind(&wallet.balance.to_string())
-            .bind(wallet.nonce as i64) // 将 u64 转换为 i64
+            .bind(wallet.nonce) 
             .execute(pool)
             .await
         {
@@ -435,8 +433,10 @@ impl WalletOperations {
                     locked: row.locked,
                     unlocked_time: chrono::DateTime::from_timestamp(row.unlocked_time, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
-                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(row.initiator_signature)?)
-                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(
+                        row.initiator_signature,
+                    )?)
+                    .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
                     timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
                     fee: Amount::from_str(&row.fee)
@@ -464,22 +464,19 @@ impl WalletOperations {
         let mut tx = pool.begin().await?;
 
         // 先获取当前nonce
-        let current_nonce: i64 = sqlx::query_scalar(
-            "SELECT nonce FROM wallets WHERE address = ? FOR UPDATE",
-        )
-        .bind(address)
-        .fetch_one(&mut *tx)
-        .await?;
+        let current_nonce: i64 =
+            sqlx::query_scalar("SELECT nonce FROM wallets WHERE address = ? FOR UPDATE")
+                .bind(address)
+                .fetch_one(&mut *tx)
+                .await?;
 
         // 原子性更新
         let new_nonce = current_nonce + 1;
-        sqlx::query(
-            "UPDATE wallets SET nonce = ? WHERE address = ?",
-        )
-        .bind(new_nonce)
-        .bind(address)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("UPDATE wallets SET nonce = ? WHERE address = ?")
+            .bind(new_nonce)
+            .bind(address)
+            .execute(&mut *tx)
+            .await?;
 
         tx.commit().await?;
         Ok(new_nonce)
@@ -490,13 +487,11 @@ impl WalletOperations {
         debug!("正在获取账户nonce: {}", address);
         let pool = &*self.pool;
 
-        let nonce = sqlx::query_scalar::<_, i64>(
-            "SELECT nonce FROM wallets WHERE address = ?",
-        )
-        .bind(address)
-        .fetch_optional(pool)
-        .await?
-        .unwrap_or(0); // 如果账户不存在，返回0
+        let nonce = sqlx::query_scalar::<_, i64>("SELECT nonce FROM wallets WHERE address = ?")
+            .bind(address)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(0); // 如果账户不存在，返回0
 
         debug!("获取到账户nonce: {}", nonce);
         Ok(nonce)
@@ -507,7 +502,7 @@ impl WalletOperations {
         &self,
         address: &str,
         expected_nonce: i64,
-        new_nonce: i64
+        new_nonce: i64,
     ) -> Result<(), LedgerError> {
         // 确保数据库已初始化
         let pool = &*self.pool;
@@ -515,7 +510,7 @@ impl WalletOperations {
         let result = sqlx::query(
             "UPDATE wallets 
             SET nonce = $1 
-            WHERE address = $2 AND nonce = $3"
+            WHERE address = $2 AND nonce = $3",
         )
         .bind(new_nonce)
         .bind(address)
@@ -529,7 +524,6 @@ impl WalletOperations {
             Ok(())
         }
     }
-
 }
 
 /// 交易数据库操作
@@ -538,17 +532,15 @@ pub struct TransactionOperations {
 }
 
 impl TransactionOperations {
-
-
-
     pub fn new(pool: Arc<SqlitePool>) -> Self {
         Self { pool }
     }
 
-
-
     /// 插入新的交易记录
-    pub async fn insert_transaction(&self, transaction: TransactionDetail) -> Result<(), LedgerError> {
+    pub async fn insert_transaction(
+        &self,
+        transaction: TransactionDetail,
+    ) -> Result<(), LedgerError> {
         debug!("正在插入交易记录: {:?}", transaction.transaction_hash);
         let pool = &*self.pool;
 
@@ -617,8 +609,10 @@ impl TransactionOperations {
                     locked: row.locked,
                     unlocked_time: chrono::DateTime::from_timestamp(row.unlocked_time, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
-                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(row.initiator_signature)?)
-                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(
+                        row.initiator_signature,
+                    )?)
+                    .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
                     timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
                     fee: Amount::from_str(&row.fee)
@@ -731,8 +725,10 @@ impl BlockOperations {
                     locked: row.locked,
                     unlocked_time: chrono::DateTime::from_timestamp(row.unlocked_time, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
-                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(row.initiator_signature)?)
-                        .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
+                    initiator_signature: SignatureWrapper::from_bytes(&hex::decode(
+                        row.initiator_signature,
+                    )?)
+                    .map_err(|e| LedgerError::SignatureError(e.to_string()))?,
                     timestamp: chrono::DateTime::from_timestamp(row.timestamp, 0)
                         .ok_or_else(|| LedgerError::TimestampError("无效的时间戳".to_string()))?,
                     fee: Amount::from_str(&row.fee)

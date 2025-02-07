@@ -29,6 +29,7 @@ graph TD
     ledger账本模块 --> merkle_tree默克尔树
     ledger账本模块 --> transaction_management交易管理
     ledger账本模块 --> data_base数据库模块
+    ledger账本模块 --> minting_management铸造管理
     wallet_management钱包管理 --> wallet_action钱包操作
     wallet_action钱包操作 --> create_wallet创建钱包
     wallet_action钱包操作 --> recover_wallet找回钱包
@@ -40,4 +41,7 @@ graph TD
 
 ## 核心逻辑
 1、钱包客户端处理签名，节点验证签名。
+2、实现 early_donate 及其对应的代币发放。
+这里我有一个问题，early_donate的代币由开发者用转账的方式我认为是不恰当的。早期捐赠者的代币应该是铸造出来的，或者说是新生成的代币自动发送到开发者提供的早期捐赠者的钱包地址列表。这才是正确的业务流程。开发者的钱包地址不应该凭空多出来许多代币。
+应该使用minting才对。
 

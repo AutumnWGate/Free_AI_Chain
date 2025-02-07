@@ -22,3 +22,27 @@ signature.rs :
     定义签名和公钥的数据结构。
     实现签名生成和验证的相关函数。
 例如 sign(data: &[u8], private_key: &PrivateKey) -> Signature 和 verify(data: &[u8], signature: &Signature, public_key: &PublicKey) -> bool。
+
+
+## 签名和验证流程图
+```mermaid
+graph LR
+subgraph Signer
+    A[Data] --> B{Hashing Function}
+    B --> C[Hash]
+    D["Signer's <br/>Private <br/>Key"]
+    C --> E[Signature <br/>Algorithm]
+    D --> E
+    E --> F[Signature]
+end
+
+subgraph Verifier
+    A --> H{Hashing <br/>Function}
+    H --> I[Hash]
+    F --> J[Verification <br/>Algorithm]
+    K["Signer's <br/>Public <br/>Key"] --> J
+    J --> L{Equal?}
+    I --> L
+end
+
+```

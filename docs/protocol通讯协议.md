@@ -34,10 +34,12 @@
 ### 3.3. Response
 响应类型 用于表示不同类型的响应，包含以下几种：
 *   `GetBalanceResponse`: 对 GetBalance 请求的响应。包含一个参数：
-    *   `balance`: 余额，Amount 类型。
+    *   `available_balance`: 可用余额，Amount 类型。
+    *   `locked_balance`: 锁定余额，Amount 类型。
 *   `SendTransactionResponse`: 对 SendTransaction 请求的响应。包含一个参数：
     *   `transaction_hash`: 交易哈希，[u8; 32] 类型。
 *   `GetNodeInfoResponse`: 对 GetNodeInfo 请求的响应。包含一个参数：
+
     *   `node_info`: 节点信息，NodeInfo 类型。
 *   `Error`: 表示请求处理过程中发生了错误。包含一个参数：
     *   `message`: 错误信息，String 类型。

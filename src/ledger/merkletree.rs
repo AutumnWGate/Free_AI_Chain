@@ -210,21 +210,20 @@ impl MerkleTreeManager {
 pub struct MerkleProof {
     pub proof_hashes: Vec<Hash>,
     pub root_hash: Hash,
-
 }
 
 impl MerkleProof {
     /// 验证默克尔证明
     fn verify(&self, transaction_hash: &[u8]) -> Result<bool, String> {
         let mut current = Hash::from_slice(transaction_hash).map_err(|e| e.to_string())?;
-        
+
         for proof_hash in &self.proof_hashes {
             let combined = if current.as_ref() <= proof_hash.as_ref() {
                 [current.as_ref(), proof_hash.as_ref()].concat()
             } else {
                 [proof_hash.as_ref(), current.as_ref()].concat()
             };
-            
+
             // 修复类型不匹配问题
             let hash_bytes = to_hash(combined.as_slice().to_vec()).map_err(|e| e.to_string())?;
             current = Hash::from_slice(hash_bytes.as_ref()).map_err(|e| e.to_string())?;
@@ -232,14 +231,4 @@ impl MerkleProof {
 
         Ok(current == self.root_hash)
     }
-
 }
-
-
-
-
-
-
-
-
-

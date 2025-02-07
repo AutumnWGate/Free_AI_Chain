@@ -46,24 +46,38 @@ pub enum Request {
         from_height: u64,
         to_height: u64,
     },
-    
+
     GetTransactionStatus {
         transaction_hash: Hash,
     },
-
 }
 
 /// 响应
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Response {
     GetNodeInfoResponse(NodeInfo),
-    GetBalanceResponse { balance: Amount },
-    SendTransactionResponse { transaction_hash: Hash },
-    GetMerkleProofResponse { merkle_proof: Vec<Hash> },
-    GetBlockResponse { block: Block },
-    GetLatestBlockResponse { block: Block },
-    GetBlockByHeightResponse { block: Block },
-    Error { message: String },
+    GetBalanceResponse {
+        available_balance: Amount,
+        locked_balance: Amount,
+    },
+    SendTransactionResponse {
+        transaction_hash: Hash,
+    },
+    GetMerkleProofResponse {
+        merkle_proof: Vec<Hash>,
+    },
+    GetBlockResponse {
+        block: Block,
+    },
+    GetLatestBlockResponse {
+        block: Block,
+    },
+    GetBlockByHeightResponse {
+        block: Block,
+    },
+    Error {
+        message: String,
+    },
     GetTransactionStatusResponse {
         status: String,
     },
@@ -80,5 +94,4 @@ pub enum Response {
     SyncBlockchainResponse {
         blocks: Vec<Block>,
     },
-
 }
