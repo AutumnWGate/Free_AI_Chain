@@ -21,7 +21,7 @@ MVP001版本技术栈要求：
 *   **区块管理**`blockchain区块链模块`:
     *   区块记录`block_header`: 存储元数据，用于维护区块链的结构、安全性和基本属性。记录和查询每一个区块的信息，包括区块头信息（父区块哈希`parent_hash`、高度`height`、时间戳`timestamp`、Merkle 根`merkle_root`、验证者`validator`、签名`signature`、区块哈希`block_hash`）。
     *   区块体`block_body`: 存储区块中的所有交易数据`transaction_list`,智能合约相关的执行结果和日志 (Smart Contract Execution Results and Logs)
-    *   区块创建`block_create`: 根据POS共识机制，创建新的区块。
+    *   区块创建`block_create`: 根据DPoS共识机制，创建新的区块。
     *   区块验证`block_verify`: 验证区块的合法性。
 *   **Merkle 树**`merkle_tree`: 使用 `merkletree` 库来高效地验证交易是否存在于某个区块中，并生成相应的证明。在交易管理和区块管理中都会用到 Merkle 树。
     *   使用 `merkle_tree::new` 或 `merkle_tree::from_data` 构建 Merkle 树。

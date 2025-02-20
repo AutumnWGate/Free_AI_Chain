@@ -1,6 +1,0 @@
-local_peer_id = "1Aepw6whLdEXC5PKm5gm4urTmiFJT3SHdaydhPGVgt9q5v"
-listen_addresses = ["/ip4/0.0.0.0/tcp/0"]
-bootstrap_nodes = []
-max_connections = 100
-connection_timeout = 10
-heartbeat_interval = 60

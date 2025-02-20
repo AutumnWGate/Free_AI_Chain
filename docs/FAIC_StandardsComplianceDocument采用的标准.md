@@ -1,6 +1,6 @@
 # 区块链标准
 - BIP32、BIP39、BIP44、BIP47、BIP84
-- PoS (共识机制)
+- DPoS (共识机制)
 - rust-libp2p (P2P网络协议)
 - merkletree (Merkle 树)
 

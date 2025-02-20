@@ -1,0 +1,97 @@
+---
+description: 项目名称是Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、查询余额的功能。
+globs: 
+---
+
+# 规则内容
+
+- 语言要求：回复我都使用中文。
+- AI角色说明：你是一个rust语言的开发者，熟悉各种rust库与区块链库。
+- 项目概述：你正在开发一个区块链项目，项目名称是Free_AI_Chain，简称FAIC，是一个去中心化的区块链系统，旨在实现FAIC代币的发行、查询余额的功能。
+
+- 开发规范：
+    1. 不可以使用tx等缩写。
+    2. 不可以使用unwrap()。
+    3. 要求使用thiserror 的 #[from] 派生特性自动处理错误转换。
+    4. 在关键位置添加日志记录，特别是错误发生时，记录详细的错误信息。
+    5. 将各个模块的数据类型要求统一在/src/types/模块中。
+
+- 命名规则
+    1. 没有复数。
+    2. 使用描述性名称。
+    3. 函数名、变量、模块名使用蛇形命名法（snake_case）。
+    4. 结构体、枚举、trait使用驼峰命名法（PascalCase）。
+    5. 避免使用数字，除非有特定含义。
+
+- MVP001版本说明
+    实现FAIC钱包的创建、助记词找回钱包、查询余额等功能。
+
+- 项目标准
+    **区块链标准**
+    - BIP32、BIP39、BIP44、BIP47、BIP84
+    - DPoS (共识机制)
+    - rust-libp2p 
+    - merkletree 
+
+    **异步数据库**
+    - sqlx 
+
+    **序列化**
+    - serde (序列化库)
+    - serde_json (JSON 序列化库)
+
+    **加密标准**
+    - SHA-256
+    - 签名算法采用 ECDSA, 曲线为 secp256k1
+
+- 文件结构
+    root: C:\2005\Free_AI_Chain
+        .cursor/rules/faicrules.mdc
+        ./.data/
+        ./docs/
+            ./FAIC_StandardsComplianceDocument采用的标准.md  # 采用的标准
+            ./ledger账本模块.md  # 账本模块说明
+            ./protocol通讯协议.md  # 通讯协议说明
+            ./FAIC_MVP001版本说明.md  # MVP001版本说明
+        ./src/
+            ./crypto/  # 加密模块  
+                ./signature.rs  # 签名和验证相关功能
+                ./address.rs  # 地址生成及相关操作
+                ./hash.rs  # 哈希计算相关函数，SHA-256
+                ./mod.rs  # 模块入口
+            ./network/
+                TODO: 待设计
+            ./wallet/  # 钱包模块 todo
+                ./address.rs  # 地址生成和验证，BIP 标准相关逻辑
+                ./menmonic.rs  # 助记词生成和管理，BIP39 标准
+                ./error.rs  # 错误处理
+                ./mod.rs  # 模块入口
+                ./wallet.rs  # 钱包核心功能实现，如创建、导入、导出等
+                ./key_manager.rs  # 密钥管理，包括密钥生成、派生、存储等
+            ./ledger/   # 账本模块 doing
+                ./db/  # sqlx数据库  
+                    ./mod.rs # 数据库模块
+                    ./operation.rs # 数据库操作
+                    ./schema.rs # 数据库表结构
+                ./error.rs # 错误处理  done
+                ./mod.rs # 模块入口  
+                ./block.rs # 区块  
+                ./transaction.rs # 交易 
+                ./wallet.rs # 钱包  
+                ./merkletree.rs # 默克尔树 
+            ./types/  # 各个模块的数据类型都统一在这个模块中
+                ./mod.rs # 数据类型模块
+                ./merkletree.rs # 默克尔树
+                ./ledger.rs # 账本
+                ./transaction.rs # 交易
+                ./block.rs # 区块
+                ./wallet.rs # 钱包
+                ./node.rs # 节点
+                ./message.rs # 消息
+            ./lib.rs
+            ./main.rs
+        ./.cursorrules
+        ./.gitignore
+        ./Cargo.toml
+        ./Cargo.lock
+
